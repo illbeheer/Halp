@@ -76,3 +76,9 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 **Getting an IPA:** every push builds an unsigned `Halp.ipa` on GitHub Actions (see the *Build IPA* workflow, *Artifacts* section). Install it with Sideloadly or AltStore, which sign it with your Apple ID.
 
 **Redrawing sprites:** edit the character grids in `PixelArt.swift`. Each character is one pixel, `.` is transparent.
+
+## Planned
+
+- **Idle mode** (after the core game has been playtested): the defense keeps fighting on its own, and you come back to collect kills earned while away.
+- **Sound:** gunshots, zombie groans, the wave-start sting.
+- **Economy check:** keep kills as the currency, or switch to points per hit plus a kill bonus.
