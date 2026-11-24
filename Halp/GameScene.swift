@@ -197,6 +197,30 @@ private final class PerkToken: SKShapeNode {
 private final class Bullet: SKSpriteNode {
     var velocity = CGVector.zero
     var damage: CGFloat = 1
+    /// How many more zombies it can pass through.
+    var pierce = 1
+    /// Distance left before it fades out (nil = unlimited).
+    var rangeLeft: CGFloat?
+    /// Zombies already hit, so a piercing bullet doesn't hit the same one twice.
+    var hits = Set<ObjectIdentifier>()
+}
+
+private extension UIColor {
+    /// Blend toward another color (t = 0...1).
+    func mixed(with other: UIColor, _ t: CGFloat) -> UIColor {
+        var r1: CGFloat = 0, g1: CGFloat = 0, b1: CGFloat = 0, a1: CGFloat = 0
+        var r2: CGFloat = 0, g2: CGFloat = 0, b2: CGFloat = 0, a2: CGFloat = 0
+        getRed(&r1, green: &g1, blue: &b1, alpha: &a1)
+        other.getRed(&r2, green: &g2, blue: &b2, alpha: &a2)
+        return UIColor(red: r1 + (r2 - r1) * t, green: g1 + (g2 - g1) * t,
+                       blue: b1 + (b2 - b1) * t, alpha: a1 + (a2 - a1) * t)
+    }
+}
+
+/// Smooth ease-in-out for 0...1.
+private func smoothstep(_ x: CGFloat) -> CGFloat {
+    let t = min(max(x, 0), 1)
+    return t * t * (3 - 2 * t)
 }
 
 // MARK: - Scene
@@ -231,6 +255,11 @@ final class GameScene: SKScene {
                                         size: PixelArt.size(Sprites.survivorRows, pixel: 4))
     private var slotNodes: [SKNode] = []
     private var slotShown: [SlotState?] = []
+    private var slotShownLevel: [Int] = []
+    private let gunSprite = SKSpriteNode(texture: Sprites.gunTexture(.pistol))
+    private let ammoLabel = SKLabelNode(fontNamed: "Futura-CondensedExtraBold")
+    private var ammo: [Gun: Int] = [:]
+    private var reloadLeft: TimeInterval = 0
     private var slotCooldowns: [TimeInterval] = []
     private var zombies: [Zombie] = []
     private var bullets: [Bullet] = []
@@ -244,6 +273,12 @@ final class GameScene: SKScene {
     private var grainTimer: TimeInterval = 0
     private var decals: [SKNode] = []
     private var isDanger = false
+    private let groundShade = SKSpriteNode(color: .black, size: .zero)
+    /// 0 = full day, 0.5 = dusk, 1 = full night. Eases toward `targetDarkness`.
+    private var darkness: CGFloat = 0
+    private var targetDarkness: CGFloat = 0
+    private var darknessRate: CGFloat = 0.25   // change per second
+    private static let duskSky = UIColor(red: 0.30, green: 0.11, blue: 0.07, alpha: 1)
 
     // MARK: State
     private var isRunning = false
@@ -299,6 +334,19 @@ final class GameScene: SKScene {
         survivor.anchorPoint = CGPoint(x: 0.5, y: 0)
         survivor.zPosition = 20
         addChild(survivor)
+        gunSprite.anchorPoint = CGPoint(x: 0.5, y: 0)
+        gunSprite.position = CGPoint(x: 14, y: 28)   // in his raised hand
+        gunSprite.zPosition = 1
+        survivor.addChild(gunSprite)
+        ammoLabel.fontSize = 13
+        ammoLabel.fontColor = Palette.bone
+        ammoLabel.zPosition = 21
+        addChild(ammoLabel)
+        groundShade.anchorPoint = .zero
+        groundShade.zPosition = 7          // darkens the ground at night, under defenders and zombies
+        groundShade.alpha = 0
+        addChild(groundShade)
+        weaponChanged()
 
         for _ in slotLayout {
             let node = SKNode()
@@ -306,6 +354,7 @@ final class GameScene: SKScene {
             addChild(node)
             slotNodes.append(node)
             slotShown.append(nil)
+            slotShownLevel.append(0)
             slotCooldowns.append(0)
         }
         layout()
@@ -326,6 +375,9 @@ final class GameScene: SKScene {
         drawStars()
         drawBackground()
         survivor.position = CGPoint(x: size.width / 2, y: 30)
+        ammoLabel.position = CGPoint(x: size.width / 2, y: 14)
+        groundShade.size = CGSize(width: size.width, height: groundHeight + 30)
+        applyDarkness()
         for (index, node) in slotNodes.enumerated() {
             node.position = slotPosition(index)
         }
@@ -403,16 +455,30 @@ final class GameScene: SKScene {
 
     private func setNight(_ night: Bool) {
         isNight = night
-        let duration = 1.2
-        sky.run(.colorize(with: night ? Self.nightSky : Self.daySky, colorBlendFactor: 1, duration: duration))
-        stars.run(.fadeAlpha(to: night ? 1 : 0, duration: duration))
-        // Night fog thickens and turns red.
-        fogLayer.run(.fadeAlpha(to: night ? 0.38 : 0.22, duration: duration))
-        for bank in fogBanks {
-            bank.node.run(.colorize(with: night ? Palette.fogNight : Palette.fogDay,
-                                    colorBlendFactor: 1, duration: duration))
-        }
-        vignette.run(.fadeAlpha(to: night ? 1 : 0.85, duration: duration))
+        fadeDarkness(to: night ? 1 : 0, over: night ? 3.5 : 6)
+    }
+
+    /// Start a slow blend of the whole scene toward a darkness level.
+    private func fadeDarkness(to target: CGFloat, over seconds: TimeInterval) {
+        targetDarkness = target
+        darknessRate = max(0.01, abs(target - darkness) / CGFloat(seconds))
+    }
+
+    /// Paint sky, stars, moon, fog, vignette and ground for the current darkness.
+    /// Day -> dusk (burnt red) -> blood-moon night, each step eased.
+    private func applyDarkness() {
+        let d = darkness
+        sky.color = d <= 0.5
+            ? Self.daySky.mixed(with: Self.duskSky, smoothstep(d / 0.5))
+            : Self.duskSky.mixed(with: Self.nightSky, smoothstep((d - 0.5) / 0.5))
+        let nightAmount = smoothstep((d - 0.4) / 0.6)
+        stars.alpha = nightAmount
+        stars.position.y = (1 - nightAmount) * 40          // the moon rises as night falls
+        fogLayer.alpha = 0.22 + 0.16 * smoothstep(d)
+        let fogColor = Palette.fogDay.mixed(with: Palette.fogNight, smoothstep(d))
+        for bank in fogBanks { bank.node.color = fogColor }
+        vignette.alpha = 0.85 + 0.15 * smoothstep(d)
+        groundShade.alpha = 0.45 * smoothstep(d)
     }
 
     // MARK: Atmosphere
@@ -425,7 +491,7 @@ final class GameScene: SKScene {
             let bank = SKSpriteNode(texture: EffectTextures.fog,
                                     size: CGSize(width: size.width * CGFloat.random(in: 0.8...1.3),
                                                  height: CGFloat.random(in: 110...190)))
-            bank.color = isNight ? Palette.fogNight : Palette.fogDay
+            bank.color = Palette.fogDay.mixed(with: Palette.fogNight, smoothstep(darkness))
             bank.colorBlendFactor = 1
             bank.position = CGPoint(x: CGFloat.random(in: 0...size.width),
                                     y: CGFloat.random(in: (groundHeight + 30)...(size.height * 0.85)))
@@ -437,6 +503,12 @@ final class GameScene: SKScene {
 
     /// Fog drifts and grain jitters all the time, even between waves.
     private func animateAtmosphere(_ dt: TimeInterval) {
+        if darkness != targetDarkness {
+            let step = darknessRate * CGFloat(dt)
+            darkness = darkness < targetDarkness ? min(targetDarkness, darkness + step)
+                                                  : max(targetDarkness, darkness - step)
+            applyDarkness()
+        }
         for bank in fogBanks {
             bank.node.position.x += bank.speed * CGFloat(dt)
             let half = bank.node.size.width / 2
@@ -539,13 +611,13 @@ final class GameScene: SKScene {
         waveActive = false
         toSpawn = 0
         playerCooldown = 0
-        sky.removeAllActions()
-        sky.color = Self.daySky
-        stars.alpha = 0
         isNight = false
-        fogLayer.alpha = 0.22
-        fogBanks.forEach { $0.node.removeAllActions(); $0.node.color = Palette.fogDay }
-        vignette.alpha = 0.85
+        darkness = 0
+        targetDarkness = 0
+        applyDarkness()
+        ammo = [:]
+        reloadLeft = 0
+        weaponChanged()
         decals.forEach { $0.removeFromParent() }
         decals.removeAll()
         isDanger = true
@@ -588,6 +660,18 @@ final class GameScene: SKScene {
         let label = model?.waveLabel ?? "\(wave)"
         model?.waveCleared()
         showBanner("WAVE \(label) CLEARED", size: 26, hold: 1.2)
+        // Dusk creeps in while you shop before a night; dawn breaks after one.
+        if isNight {
+            fadeDarkness(to: 0, over: 6)
+        } else if model?.nextIsNight == true {
+            fadeDarkness(to: 0.5, over: 5)
+        }
+        // Fresh magazine between waves.
+        if let model = model {
+            ammo[model.equippedGun] = model.magazineSize
+            reloadLeft = 0
+            updateAmmoLabel()
+        }
     }
 
     /// Redraw each slot to match the model: padlock, empty pad, turret or catapult.
@@ -596,11 +680,28 @@ final class GameScene: SKScene {
         for (index, node) in slotNodes.enumerated() {
             let state = model.slots[index]
             let isNextLocked = index == model.nextLockedSlot
+            let level = model.slotLevels[index]
             // Locked slots are redrawn every time so the "next unlock" price stays current.
-            guard slotShown[index] != state || state == .locked else { continue }
+            guard slotShown[index] != state || state == .locked || slotShownLevel[index] != level else { continue }
             let wasShown = slotShown[index]
+            let wasUpgrade = wasShown == state && slotShownLevel[index] < level
             slotShown[index] = state
+            slotShownLevel[index] = level
             node.removeAllChildren()
+            if state == .turret || state == .catapult {
+                let badge = SKLabelNode(text: "LV\(level)")
+                badge.fontName = "Futura-CondensedExtraBold"
+                badge.fontSize = 10
+                badge.fontColor = level >= GameModel.maxDefenseLevel ? Palette.bloodRed : Palette.bone
+                badge.horizontalAlignmentMode = .left
+                badge.position = CGPoint(x: 12, y: 36)
+                badge.zPosition = 2
+                node.addChild(badge)
+                if wasUpgrade {
+                    pop(node)
+                    burstSparks(at: CGPoint(x: node.position.x, y: node.position.y + 20))
+                }
+            }
 
             switch state {
             case .locked:
@@ -644,6 +745,20 @@ final class GameScene: SKScene {
                 slotCooldowns[index] = 0.5
                 if wasShown != nil { pop(node) }
             }
+        }
+    }
+
+    /// Little shower of sparks when a defense levels up.
+    private func burstSparks(at point: CGPoint) {
+        for _ in 0..<10 {
+            let spark = SKSpriteNode(color: Palette.bullet, size: CGSize(width: 3, height: 3))
+            spark.position = point
+            spark.zPosition = 40
+            spark.name = "fx"
+            addChild(spark)
+            let angle = CGFloat.random(in: 0...(2 * .pi))
+            let move = SKAction.moveBy(x: cos(angle) * 30, y: sin(angle) * 30, duration: 0.35)
+            spark.run(.sequence([.group([move, .fadeOut(withDuration: 0.35)]), .removeFromParent()]))
         }
     }
 
@@ -745,19 +860,8 @@ final class GameScene: SKScene {
             }
         }
 
-        // The survivor shoots at the closest zombies.
-        playerCooldown -= dt
-        if playerCooldown <= 0 {
-            let targets = closestZombies(model.shotsPerVolley)
-            if !targets.isEmpty {
-                let muzzle = CGPoint(x: survivor.position.x + 14, y: survivor.position.y + survivor.size.height)
-                for target in targets {
-                    fire(from: muzzle, at: target, damage: model.playerDamage, color: Palette.bullet)
-                }
-                flash(at: muzzle)
-                playerCooldown = model.fireInterval
-            }
-        }
+        // The survivor fires the equipped gun.
+        updateGun(dt, model: model)
 
         // Turrets and catapults
         for index in slotNodes.indices {
@@ -768,16 +872,16 @@ final class GameScene: SKScene {
             let node = slotNodes[index]
             if state == .turret {
                 let muzzle = CGPoint(x: node.position.x, y: node.position.y + 36)
-                fire(from: muzzle, at: target, damage: model.turretDamage, color: Palette.turretBullet)
+                fire(from: muzzle, at: target, damage: model.turretDamage(slot: index), color: Palette.turretBullet)
                 flash(at: muzzle)
-                slotCooldowns[index] = model.turretInterval
+                slotCooldowns[index] = model.turretInterval(slot: index)
             } else {
                 launchRock(from: CGPoint(x: node.position.x + 12, y: node.position.y + 40), at: target,
-                           damage: model.catapultDamage, radius: model.catapultRadius)
+                           damage: model.catapultDamage(slot: index), radius: model.catapultRadius(slot: index))
                 if let body = node.childNode(withName: "body") {
                     body.run(.sequence([.scaleY(to: 0.85, duration: 0.06), .scaleY(to: 1, duration: 0.12)]))
                 }
-                slotCooldowns[index] = model.catapultInterval
+                slotCooldowns[index] = model.catapultInterval(slot: index)
             }
         }
 
@@ -792,24 +896,103 @@ final class GameScene: SKScene {
             .map { $0 }
     }
 
+    // MARK: The survivor's gun
+
+    /// Swap the gun art and ammo after buying, switching or a magazine upgrade.
+    func weaponChanged(refill: Bool = false) {
+        guard let model = model else { return }
+        let gun = model.equippedGun
+        gunSprite.removeAction(forKey: "reload")
+        gunSprite.zRotation = 0
+        gunSprite.texture = Sprites.gunTexture(gun)
+        gunSprite.size = PixelArt.size(Sprites.gunRows(gun), pixel: 4)
+        let mag = model.magazineSize
+        if refill || ammo[gun] == nil {
+            ammo[gun] = mag
+        }
+        ammo[gun] = min(ammo[gun] ?? mag, mag)
+        reloadLeft = (ammo[gun] ?? 0) <= 0 ? model.reloadTime : 0
+        playerCooldown = min(playerCooldown, 0.2)
+        updateAmmoLabel()
+    }
+
+    private var gunMuzzle: CGPoint {
+        CGPoint(x: survivor.position.x + gunSprite.position.x,
+                y: survivor.position.y + gunSprite.position.y + gunSprite.size.height)
+    }
+
+    private func updateGun(_ dt: TimeInterval, model: GameModel) {
+        let gun = model.equippedGun
+        if reloadLeft > 0 {
+            reloadLeft -= dt
+            if reloadLeft <= 0 {
+                ammo[gun] = model.magazineSize
+                updateAmmoLabel()
+            }
+            return
+        }
+        playerCooldown -= dt
+        guard playerCooldown <= 0, let target = closestZombies(1).first else { return }
+
+        let muzzle = gunMuzzle
+        for _ in 0..<gun.pellets {
+            fire(from: muzzle, at: target, damage: model.gunDamage, color: Palette.bullet,
+                 spread: gun.spread, pierce: gun.pierce, range: gun.range)
+        }
+        flash(at: muzzle)
+        let restY: CGFloat = 28
+        gunSprite.run(.sequence([.moveTo(y: restY - 3, duration: 0.02), .moveTo(y: restY, duration: 0.05)]),
+                      withKey: "recoil")
+        playerCooldown = model.gunInterval
+
+        let left = (ammo[gun] ?? model.magazineSize) - 1
+        ammo[gun] = left
+        if left <= 0 {
+            reloadLeft = model.reloadTime
+            gunSprite.run(.sequence([.rotate(toAngle: -0.6, duration: 0.1),
+                                     .wait(forDuration: max(0, model.reloadTime - 0.2)),
+                                     .rotate(toAngle: 0, duration: 0.1)]), withKey: "reload")
+        }
+        updateAmmoLabel()
+    }
+
+    private func updateAmmoLabel() {
+        guard let model = model else { return }
+        ammoLabel.removeAction(forKey: "blink")
+        ammoLabel.alpha = 1
+        if reloadLeft > 0 {
+            ammoLabel.text = "RELOADING"
+            ammoLabel.fontColor = Palette.bloodRed
+            ammoLabel.run(.repeatForever(.sequence([.fadeAlpha(to: 0.3, duration: 0.2),
+                                                    .fadeAlpha(to: 1, duration: 0.2)])), withKey: "blink")
+        } else {
+            let left = ammo[model.equippedGun] ?? model.magazineSize
+            ammoLabel.text = "\(left) / \(model.magazineSize)"
+            ammoLabel.fontColor = left * 4 <= model.magazineSize ? Palette.bloodRed : Palette.bone
+        }
+    }
+
     // MARK: Shooting
 
-    private func fire(from origin: CGPoint, at target: Zombie, damage: CGFloat, color: UIColor) {
+    private func fire(from origin: CGPoint, at target: Zombie, damage: CGFloat, color: UIColor,
+                      spread: CGFloat = 0, pierce: Int = 1, range: CGFloat? = nil) {
         // Lead the target slightly so shots land on walking zombies.
         let distance = hypot(target.position.x - origin.x, target.position.y - origin.y)
         let travel = distance / bulletSpeed
         let aim = CGPoint(x: target.position.x,
                           y: target.position.y - target.walkSpeed * CGFloat(travel))
         let dx = aim.x - origin.x, dy = aim.y - origin.y
-        let length = max(1, hypot(dx, dy))
 
         let bullet = Bullet(color: perkActive(.poison) ? Perk.poison.color : color,
                             size: CGSize(width: 3, height: 9))
         bullet.position = origin
         bullet.zPosition = 25
-        bullet.zRotation = atan2(dy, dx) - .pi / 2
-        bullet.velocity = CGVector(dx: dx / length * bulletSpeed, dy: dy / length * bulletSpeed)
+        let angle = atan2(dy, dx) + (spread > 0 ? CGFloat.random(in: -spread / 2...spread / 2) : 0)
+        bullet.zRotation = angle - .pi / 2
+        bullet.velocity = CGVector(dx: cos(angle) * bulletSpeed, dy: sin(angle) * bulletSpeed)
         bullet.damage = damage
+        bullet.pierce = pierce
+        bullet.rangeLeft = range
         addChild(bullet)
         bullets.append(bullet)
     }
@@ -820,9 +1003,23 @@ final class GameScene: SKScene {
             bullet.position.x += bullet.velocity.dx * CGFloat(dt)
             bullet.position.y += bullet.velocity.dy * CGFloat(dt)
 
-            if let hit = zombies.first(where: { $0.frame.contains(bullet.position) }) {
-                spent.append(bullet)
+            if let range = bullet.rangeLeft {
+                let left = range - bulletSpeed * CGFloat(dt)
+                bullet.rangeLeft = left
+                bullet.alpha = min(1, left / 60)
+                if left <= 0 {
+                    spent.append(bullet)
+                    continue
+                }
+            }
+
+            if let hit = zombies.first(where: {
+                $0.frame.contains(bullet.position) && !bullet.hits.contains(ObjectIdentifier($0))
+            }) {
+                bullet.hits.insert(ObjectIdentifier(hit))
                 applyDamage(bullet.damage, to: hit)
+                bullet.pierce -= 1
+                if bullet.pierce <= 0 { spent.append(bullet) }
             } else if bullet.position.y > size.height + 20
                         || bullet.position.x < -20 || bullet.position.x > size.width + 20 {
                 spent.append(bullet)

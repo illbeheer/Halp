@@ -10,8 +10,20 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 - **Battlefield:** zombies walk down toward the barricade. Every one that reaches it damages the barricade. At 0 HP you're overrun.
 - **>> button:** just above the barricade on the right, toggles 2x speed.
 - **Defense line:** the survivor stands in the middle with **8 slots** in two rows of four, two on each side.
-  - 2 slots are free from the start. The other 6 are locked and unlock **in order**: one free every 4 waves, or buy the next one early with kills.
+  - Only 2 slots are free. The other 6 are locked and must be **bought, in order**.
   - Tap an unlocked slot to build a **Turret** (fast, one target) or a **Catapult** (slow, lobs rocks that splash a group). Each extra one costs more.
+  - Tap a built turret or catapult to **upgrade it** (up to LV 10). Each one levels up separately.
+- **Guns:** the survivor starts with a pistol. Buy and switch guns in the armory row at the bottom; each gun has its own magazine, reload and upgrades (Damage, Fire Rate, Magazine). Better guns cost more to upgrade.
+
+| Gun | Price | Plays like |
+| --- | --- | --- |
+| Pistol | free | Reliable sidearm, 8 rounds |
+| SMG | 60 | Very fast, weak hits, 30 rounds |
+| Shotgun | 120 | 5 pellets per shot, short range, 6 shells |
+| Assault Rifle | 250 | Fast and hard-hitting, 30 rounds |
+| Marksman | 400 | Slow, huge damage, each shot pierces up to 4 zombies |
+| LMG | 800 | 100-round belt, very fast, long reload |
+
 - **Perks:** after wave 5, killed zombies have a small chance (4%, bosses always) to drop a perk. Tap it to collect it before it blinks out (about 7 seconds); it then flies to the top and activates. Timers show at the top of the battlefield and only run down during waves.
 
 | Perk | Lasts | Effect |
@@ -20,7 +32,7 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | 💀 Insta-Kill | 8s | Every hit kills a normal zombie; bosses take +30% damage instead |
 | 🧪 Poison Bullets | 15s | Bullets also poison: extra damage over 3s |
 
-- **Day and night:** nights are half-waves that come after every 3rd day wave: 1, 2, 3, **3.5**, 4, 5, 6, **6.5**, 7… Nights are much shorter (half the zombies, spawning faster), but zombies get +60% health and +10% speed, on top of health that rises every wave. Boss waves and free slot unlocks only happen on day waves.
+- **Day and night:** nights are half-waves that come after every 3rd day wave: 1, 2, 3, **3.5**, 4, 5, 6, **6.5**, 7… Nights are much shorter (half the zombies, spawning faster), but zombies get +60% health and +10% speed, on top of health that rises every wave. Boss waves only happen on day waves. The light changes gradually: dusk creeps in while you shop before a night, it goes fully dark as the night starts, and dawn breaks after it.
 - **Zombie types:**
 
 | Zombie | From wave | Notes |
@@ -32,15 +44,13 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | Bloater | 6 | Bursts when killed, damaging zombies around it; hits the barricade for 5 |
 | Boss | every 5th | Huge health, hits the barricade for 10 |
 
-- **Upgrade panel (bottom):**
+- **Armory (bottom):** the gun row, then upgrades for the equipped gun:
 
 | Upgrade | Effect |
 | --- | --- |
-| Damage | Survivor's bullets hit harder (×1.3 per level) |
-| Fire Rate | Survivor shoots faster (max level 15) |
-| Multi-Shot | Fire at 2, then 3 zombies at once |
-| Turret Pwr | All turrets hit harder and fire faster |
-| Catapult Pwr | All catapults hit harder, fire faster, splash wider |
+| Damage | ×1.3 damage per level |
+| Fire Rate | Faster shots (max LV 10) |
+| Magazine | +25% rounds and faster reload per level (max LV 8) |
 | Repair | Restores 5 barricade HP |
 
 ## Running it on a Mac

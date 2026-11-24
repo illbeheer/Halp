@@ -35,13 +35,14 @@ enum PixelArt {
 enum Sprites {
     // MARK: Survivor (the player)
 
+    /// The survivor without a gun; the equipped gun is drawn on top (see `Sprites.gunRows`).
     static let survivorRows = [
-        "........GG",
-        "...HHH..GG",
-        "..HHHHH.G.",
-        "..SSSSS.G.",
-        "..SESES.G.",
-        "..SSSSS.G.",
+        "..........",
+        "...HHH....",
+        "..HHHHH...",
+        "..SSSSS...",
+        "..SESES...",
+        "..SSSSS...",
         "...SSS..S.",
         ".BBBBBBBS.",
         "S.BBBBB...",
@@ -62,6 +63,97 @@ enum Sprites {
     ]
 
     static let survivor = PixelArt.texture(survivorRows, palette: survivorPalette)
+
+    // MARK: Guns (held pointing up; the muzzle is the top row)
+
+    static func gunRows(_ gun: Gun) -> [String] {
+        switch gun {
+        case .pistol:
+            return [
+                "G.",
+                "GG",
+                "GG",
+                "DG",
+            ]
+        case .smg:
+            return [
+                ".G.",
+                ".G.",
+                "GGG",
+                "GGG",
+                "DGG",
+                "D..",
+            ]
+        case .shotgun:
+            return [
+                "GG",
+                "GG",
+                "GG",
+                "GG",
+                "WW",
+                "WG",
+                "GG",
+                "WW",
+                "WW",
+            ]
+        case .rifle:
+            return [
+                ".G.",
+                ".G.",
+                ".G.",
+                "GGG",
+                "GGG",
+                "DGG",
+                "DGG",
+                ".WW",
+                ".WW",
+            ]
+        case .marksman:
+            return [
+                ".G.",
+                ".G.",
+                ".G.",
+                ".G.",
+                "SGG",
+                "SGG",
+                "SGG",
+                ".GG",
+                ".GG",
+                ".WW",
+                ".WW",
+                ".WW",
+            ]
+        case .lmg:
+            return [
+                ".GG.",
+                ".GG.",
+                ".GG.",
+                "GGGG",
+                "GGGG",
+                "DGGG",
+                "DGGG",
+                "DDGG",
+                ".GGG",
+                ".WWW",
+            ]
+        }
+    }
+
+    static let gunPalette: [Character: UIColor] = [
+        "G": UIColor(red: 0.42, green: 0.44, blue: 0.47, alpha: 1),
+        "D": UIColor(red: 0.20, green: 0.21, blue: 0.23, alpha: 1),
+        "W": UIColor(red: 0.40, green: 0.26, blue: 0.14, alpha: 1),
+        "S": UIColor(red: 0.15, green: 0.15, blue: 0.17, alpha: 1),
+    ]
+
+    private static var gunTextureCache: [Gun: SKTexture] = [:]
+
+    static func gunTexture(_ gun: Gun) -> SKTexture {
+        if let cached = gunTextureCache[gun] { return cached }
+        let texture = PixelArt.texture(gunRows(gun), palette: gunPalette)
+        gunTextureCache[gun] = texture
+        return texture
+    }
 
     // MARK: Zombies (two walk frames, palette-swapped per type)
 

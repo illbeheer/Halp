@@ -78,7 +78,12 @@ struct ContentView: View {
 
     private var slotTitle: String {
         guard let index = model.selectedSlot else { return "" }
-        return model.slots[index] == .locked ? "Locked slot" : "Build on this slot"
+        switch model.slots[index] {
+        case .locked: return "Locked slot"
+        case .empty: return "Build on this slot"
+        case .turret: return "Turret · LV \(model.slotLevels[index])"
+        case .catapult: return "Catapult · LV \(model.slotLevels[index])"
+        }
     }
 
     @ViewBuilder private var slotButtons: some View {
@@ -96,6 +101,10 @@ struct ContentView: View {
                 if model.kills >= catapultCost {
                     Button("Catapult – \(skull) \(catapultCost)") { model.build(.catapult, at: index) }
                 }
+            } else if let cost = model.upgradeCost(slot: index), model.kills >= cost {
+                Button("Upgrade to LV \(model.slotLevels[index] + 1) – \(skull) \(cost)") {
+                    model.upgradeDefense(at: index)
+                }
             }
         }
         Button("Cancel", role: .cancel) {}
@@ -108,10 +117,7 @@ struct ContentView: View {
             guard index == model.nextLockedSlot, let cost = model.unlockCost else {
                 return "Slots unlock in order. Unlock the brighter padlock first."
             }
-            var text = "Unlock now for \(skull) \(cost)"
-            if let freeWave = model.nextFreeUnlockWave {
-                text += ", or wait: it unlocks free after wave \(freeWave)."
-            }
+            var text = "Unlock this slot for \(skull) \(cost)."
             if model.kills < cost {
                 text += "\n\nYou have \(skull) \(model.kills)."
             }
@@ -123,9 +129,26 @@ struct ContentView: View {
                 text += "\n\nYou have \(skull) \(model.kills). Kill more zombies!"
             }
             return text
-        case .turret, .catapult:
-            return ""
+        case .turret:
+            var text = String(format: "%.1f damage, %.1f shots/s.",
+                              Double(model.turretDamage(slot: index)), 1 / model.turretInterval(slot: index))
+            text += upgradeNote(index)
+            return text
+        case .catapult:
+            var text = String(format: "%.1f splash damage every %.1fs, radius %.0f.",
+                              Double(model.catapultDamage(slot: index)), model.catapultInterval(slot: index),
+                              Double(model.catapultRadius(slot: index)))
+            text += upgradeNote(index)
+            return text
         }
+    }
+
+    private func upgradeNote(_ index: Int) -> String {
+        guard let cost = model.upgradeCost(slot: index) else { return "\n\nFully upgraded." }
+        if model.kills < cost {
+            return "\n\nNext level: \(skull) \(cost). You have \(skull) \(model.kills)."
+        }
+        return ""
     }
 }
 
@@ -240,16 +263,27 @@ private struct DayNightIndicator: View {
 
     var body: some View {
         VStack(spacing: 1) {
-            Image(systemName: isNight ? "moon.fill" : "sun.haze.fill")
-                .font(.system(size: 32, weight: .bold))
-                .foregroundStyle(isNight ? blood : Color(red: 0.80, green: 0.62, blue: 0.35))
-                .shadow(color: isNight ? blood : .clear, radius: 8)
+            // Sun and moon crossfade (the moon rises as the sun sinks).
+            ZStack {
+                Image(systemName: "sun.haze.fill")
+                    .foregroundStyle(Color(red: 0.80, green: 0.62, blue: 0.35))
+                    .opacity(isNight ? 0 : 1)
+                    .offset(y: isNight ? 10 : 0)
+                Image(systemName: "moon.fill")
+                    .foregroundStyle(blood)
+                    .shadow(color: blood, radius: 8)
+                    .opacity(isNight ? 1 : 0)
+                    .offset(y: isNight ? 0 : 10)
+            }
+            .font(.system(size: 32, weight: .bold))
+            .frame(height: 36)
+            .clipped()
             Text(upcoming ? (isNight ? "NIGHT FALLS" : "NEXT: DAY") : (isNight ? "NIGHT" : "DAY"))
                 .font(gritty(12))
                 .tracking(1)
                 .foregroundStyle(bone.opacity(0.8))
         }
-        .animation(.easeInOut(duration: 0.3), value: isNight)
+        .animation(.easeInOut(duration: 1.5), value: isNight)
         .accessibilityElement(children: .combine)
     }
 }
@@ -335,26 +369,96 @@ private struct HealthBar: View {
     }
 }
 
-// MARK: - Upgrades
+// MARK: - Armory (bottom panel): pick a gun, then upgrade it
 
 private struct UpgradePanel: View {
     @ObservedObject var model: GameModel
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
 
     var body: some View {
-        LazyVGrid(columns: columns, spacing: 8) {
-            ForEach(Upgrade.allCases) { upgrade in
-                UpgradeCard(upgrade: upgrade, model: model)
+        VStack(spacing: 8) {
+            GunSelector(model: model)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(model.equippedGun.name.uppercased())
+                    .font(gritty(16))
+                    .foregroundStyle(blood)
+                Text(model.equippedGun.blurb)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(bone.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+            }
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(Upgrade.allCases) { upgrade in
+                    UpgradeCard(upgrade: upgrade, model: model)
+                }
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 10)
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
         .padding(.bottom, 6)
         .background(panelColor)
         .overlay(alignment: .top) {
             Rectangle().fill(blood.opacity(0.6)).frame(height: 2)
         }
+    }
+}
+
+/// Row of the six gun classes: owned ones switch, others show their price.
+private struct GunSelector: View {
+    @ObservedObject var model: GameModel
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(Gun.allCases) { gun in
+                    GunChip(gun: gun, model: model)
+                }
+            }
+        }
+    }
+}
+
+private struct GunChip: View {
+    let gun: Gun
+    @ObservedObject var model: GameModel
+
+    var body: some View {
+        let owned = model.owns(gun)
+        let equipped = model.equippedGun == gun
+        let affordable = model.canBuyGun(gun)
+
+        Button {
+            model.gunTapped(gun)
+        } label: {
+            VStack(spacing: 1) {
+                Text(gun.shortName.uppercased())
+                    .font(gritty(13))
+                    .lineLimit(1)
+                Text(owned ? (equipped ? "EQUIPPED" : "OWNED") : "\(skull) \(gun.price)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(owned ? bone.opacity(equipped ? 1 : 0.6)
+                                           : (affordable ? blood : bone.opacity(0.35)))
+            }
+            .foregroundStyle(equipped ? bone : bone.opacity(owned ? 0.9 : 0.5))
+            .frame(minWidth: 64)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(equipped ? blood.opacity(0.85) : Color.white.opacity(owned ? 0.08 : 0.03))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(equipped ? blood : (affordable ? blood.opacity(0.8) : Color.white.opacity(0.12)),
+                            lineWidth: affordable && !owned ? 2 : 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!owned && !affordable)
+        .accessibilityLabel(owned ? "\(gun.name)\(equipped ? ", equipped" : "")" : "Buy \(gun.name) for \(gun.price) kills")
     }
 }
 
@@ -365,29 +469,33 @@ private struct UpgradeCard: View {
     var body: some View {
         let maxed = model.isMaxed(upgrade)
         let affordable = model.canBuy(upgrade)
+        let level = model.level(upgrade)
 
         Button {
             model.buy(upgrade)
         } label: {
             VStack(spacing: 2) {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: upgrade.icon)
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 10, weight: .bold))
                     Text(upgrade.title.uppercased())
-                        .font(gritty(14))
+                        .font(gritty(13))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                Text(model.detail(upgrade))
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                Text(upgrade == .repair ? model.detail(upgrade) : "LV \(level) · \(model.detail(upgrade))")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundStyle(bone.opacity(0.6))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 Text(maxed ? "MAX" : "\(skull) \(model.cost(upgrade))")
-                    .font(gritty(16))
+                    .font(gritty(15))
                     .foregroundStyle(maxed ? bone.opacity(0.5) : (affordable ? blood : bone.opacity(0.35)))
             }
             .foregroundStyle(bone)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
+            .padding(.vertical, 6)
+            .padding(.horizontal, 2)
             .background(
                 RoundedRectangle(cornerRadius: 3)
                     .fill(affordable ? Color(red: 0.16, green: 0.05, blue: 0.05) : Color.white.opacity(0.04))
@@ -418,7 +526,7 @@ private struct MenuOverlay: View {
                 .font(gritty(20))
                 .tracking(1.5)
                 .foregroundStyle(bone)
-            Text("Hold the barricade. Send each wave with ▶.\nTap a slot to build turrets and catapults.\nAfter every 3rd wave, night falls (3.5, 6.5…).")
+            Text("Hold the barricade. Send each wave with ▶.\nBuy guns, unlock slots, build and upgrade\nturrets and catapults. Night falls after\nevery 3rd wave (3.5, 6.5…).")
                 .multilineTextAlignment(.center)
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundStyle(bone.opacity(0.6))
