@@ -6,8 +6,22 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 
 ## How it plays
 
-- **Top bar:** current wave, barricade health, kill count (your currency), and a **2x** speed toggle.
-- **Battlefield:** zombies walk toward the barricade. Every one that reaches it damages the barricade. At 0 HP you're overrun.
+- **Top bar:** wave, barricade health and kills (your currency) on the left. A **sun/moon** in the middle shows whether it's day or night. On the right, the **Play** button sends the next wave; during a wave it pauses and resumes.
+- **Battlefield:** zombies walk down toward the barricade. Every one that reaches it damages the barricade. At 0 HP you're overrun.
+- **>> button:** just above the barricade on the right, toggles 2x speed.
+- **Defense line:** the survivor stands in the middle, with 4 turret spots in two rows, two on each side.
+- **Day and night:** waves alternate day (odd) and night (even). Zombie health rises every wave, and night zombies get +60% health and +10% speed on top of that.
+- **Zombie types:**
+
+| Zombie | From wave | Notes |
+| --- | --- | --- |
+| Walker | 1 | The regular shambler |
+| Runner | 2 | Speed zombie: fast, fragile (more common at night) |
+| Crawler | 3 | Small and quick, comes in packs of 3 |
+| Tank | 4 | Armored and slow, soaks damage, hits the barricade for 4 |
+| Bloater | 6 | Bursts when killed, damaging zombies around it; hits the barricade for 5 |
+| Boss | every 5th | Huge health, hits the barricade for 10 |
+
 - **Upgrade panel (bottom):**
 
 | Upgrade | Effect |
@@ -18,8 +32,6 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | Turret | Builds a turret on the next empty spot (4 spots) |
 | Turret Pwr | All turrets hit harder and fire faster |
 | Repair | Restores 5 barricade HP |
-
-- **Zombies:** walkers; fast, fragile runners from wave 3; tanky brutes from wave 5; and a boss every 5th wave.
 
 ## Running it on a Mac
 
@@ -49,6 +61,8 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | `Halp/PixelArt.swift` | Pixel sprites drawn from text grids (no image files needed) |
 | `Halp/Palette.swift` | Colors |
 
-**Tuning:** upgrade costs and stats are in `GameModel.swift`. Zombie health, speed and rewards are in the `Zombie.Kind` enum in `GameScene.swift`. Wave size and spawn rate are in `startNextWave()`.
+**Tuning:** upgrade costs and the day/night rule (`isNight(wave:)`) are in `GameModel.swift`. Zombie health, speed and rewards are in the `Zombie.Kind` enum in `GameScene.swift`; the night boost is `nightHPMultiplier`; which zombies appear when is `randomKind()`; wave size and spawn rate are in `startNextWave()`.
+
+**Getting an IPA:** every push builds an unsigned `Halp.ipa` on GitHub Actions (see the *Build IPA* workflow, *Artifacts* section). Install it with Sideloadly or AltStore, which sign it with your Apple ID.
 
 **Redrawing sprites:** edit the character grids in `PixelArt.swift`. Each character is one pixel, `.` is transparent.

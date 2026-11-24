@@ -55,9 +55,18 @@ final class GameModel: ObservableObject {
     @Published private(set) var levels: [Upgrade: Int] = [:]
     @Published private(set) var bestWave: Int
     @Published private(set) var isNewBest = false
+    @Published private(set) var waveInProgress = false
+    @Published var isPaused = false
     @Published var isFastForward = false {
         didSet { scene.speed = isFastForward ? 2 : 1 }
     }
+
+    /// Day and night alternate: odd waves are day, even waves are night.
+    /// Night zombies get extra health (see GameScene.nightHPMultiplier).
+    static func isNight(wave: Int) -> Bool { wave % 2 == 0 }
+
+    /// The phase shown at the top: the current wave while it's running, otherwise the next one.
+    var isNight: Bool { Self.isNight(wave: waveInProgress ? wave : wave + 1) }
 
     let scene: GameScene
     private static let bestWaveKey = "halp.bestWave"
@@ -79,8 +88,21 @@ final class GameModel: ObservableObject {
         levels = [:]
         isNewBest = false
         isFastForward = false
+        isPaused = false
+        waveInProgress = false
         phase = .playing
         scene.startGame()
+    }
+
+    /// The Play button: starts the next wave, or pauses/resumes the current one.
+    func playPressed() {
+        guard phase == .playing else { return }
+        if waveInProgress {
+            isPaused.toggle()
+        } else {
+            isPaused = false
+            scene.startNextWave()
+        }
     }
 
     // MARK: Upgrades
@@ -157,6 +179,12 @@ final class GameModel: ObservableObject {
 
     func waveStarted(_ number: Int) {
         wave = number
+        waveInProgress = true
+    }
+
+    func waveCleared() {
+        waveInProgress = false
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
     func zombieKilled(reward: Int) {
@@ -175,6 +203,8 @@ final class GameModel: ObservableObject {
                 UserDefaults.standard.set(wave, forKey: Self.bestWaveKey)
             }
             scene.endGame()
+            waveInProgress = false
+            isPaused = false
             phase = .gameOver
         }
     }

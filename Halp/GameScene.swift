@@ -4,75 +4,114 @@ import UIKit
 // MARK: - Zombie
 
 final class Zombie: SKSpriteNode {
-    enum Kind {
-        case walker, runner, brute, boss
+    enum Kind: CaseIterable {
+        case walker    // the regular shambler
+        case runner    // speed zombie: fast, fragile
+        case crawler   // small, quick, spawns in packs of 3
+        case tank      // armored, very slow, soaks damage
+        case bloater   // bursts on death, hurting nearby zombies; hits the barricade hard
+        case boss      // every 5th wave
 
         var baseHP: CGFloat {
             switch self {
             case .walker: return 3
             case .runner: return 1.6
-            case .brute: return 10
+            case .crawler: return 1.2
+            case .tank: return 14
+            case .bloater: return 6
             case .boss: return 60
             }
         }
 
         var walkSpeed: CGFloat {   // points per second
             switch self {
-            case .walker: return 32
-            case .runner: return 62
-            case .brute: return 20
-            case .boss: return 14
+            case .walker: return 30
+            case .runner: return 64
+            case .crawler: return 46
+            case .tank: return 17
+            case .bloater: return 22
+            case .boss: return 13
             }
         }
 
         var pixel: CGFloat {
             switch self {
-            case .walker, .runner: return 3
-            case .brute: return 4
+            case .walker, .runner, .crawler, .bloater: return 3
+            case .tank: return 4
             case .boss: return 6
             }
         }
 
         var reward: Int {
             switch self {
-            case .walker, .runner: return 1
-            case .brute: return 3
+            case .walker, .runner, .crawler: return 1
+            case .bloater: return 2
+            case .tank: return 4
             case .boss: return 15
             }
         }
 
         var baseDamage: Int {
             switch self {
-            case .walker, .runner: return 1
-            case .brute: return 3
+            case .walker, .runner, .crawler: return 1
+            case .tank: return 4
+            case .bloater: return 5
             case .boss: return 10
             }
         }
 
-        var frames: [SKTexture] {
+        var gridA: [String] {
             switch self {
-            case .walker: return Zombie.walkerFrames
-            case .runner: return Zombie.runnerFrames
-            case .brute: return Zombie.bruteFrames
-            case .boss: return Zombie.bossFrames
+            case .walker, .runner, .boss: return Sprites.zombieFrameA
+            case .crawler: return Sprites.crawlerFrameA
+            case .tank: return Sprites.tankFrameA
+            case .bloater: return Sprites.bloaterFrameA
             }
         }
-    }
 
-    private static func makeFrames(skin: UIColor, shirt: UIColor) -> [SKTexture] {
-        let palette = Sprites.zombiePalette(skin: skin, shirt: shirt)
-        return [PixelArt.texture(Sprites.zombieFrameA, palette: palette),
-                PixelArt.texture(Sprites.zombieFrameB, palette: palette)]
-    }
+        var gridB: [String] {
+            switch self {
+            case .walker, .runner, .boss: return Sprites.zombieFrameB
+            case .crawler: return Sprites.crawlerFrameB
+            case .tank: return Sprites.tankFrameB
+            case .bloater: return Sprites.bloaterFrameB
+            }
+        }
 
-    static let walkerFrames = makeFrames(skin: UIColor(red: 0.47, green: 0.68, blue: 0.36, alpha: 1),
-                                         shirt: UIColor(red: 0.45, green: 0.33, blue: 0.24, alpha: 1))
-    static let runnerFrames = makeFrames(skin: UIColor(red: 0.62, green: 0.72, blue: 0.40, alpha: 1),
-                                         shirt: UIColor(red: 0.70, green: 0.20, blue: 0.20, alpha: 1))
-    static let bruteFrames = makeFrames(skin: UIColor(red: 0.38, green: 0.52, blue: 0.40, alpha: 1),
-                                        shirt: UIColor(red: 0.35, green: 0.30, blue: 0.50, alpha: 1))
-    static let bossFrames = makeFrames(skin: UIColor(red: 0.55, green: 0.40, blue: 0.62, alpha: 1),
-                                       shirt: UIColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 1))
+        var colors: (skin: UIColor, shirt: UIColor) {
+            switch self {
+            case .walker:
+                return (UIColor(red: 0.47, green: 0.68, blue: 0.36, alpha: 1),
+                        UIColor(red: 0.45, green: 0.33, blue: 0.24, alpha: 1))
+            case .runner:
+                return (UIColor(red: 0.62, green: 0.72, blue: 0.40, alpha: 1),
+                        UIColor(red: 0.75, green: 0.18, blue: 0.18, alpha: 1))
+            case .crawler:
+                return (UIColor(red: 0.55, green: 0.60, blue: 0.45, alpha: 1),
+                        UIColor(red: 0.30, green: 0.30, blue: 0.30, alpha: 1))
+            case .tank:
+                return (UIColor(red: 0.38, green: 0.52, blue: 0.40, alpha: 1),
+                        UIColor(red: 0.25, green: 0.25, blue: 0.28, alpha: 1))
+            case .bloater:
+                return (UIColor(red: 0.60, green: 0.70, blue: 0.35, alpha: 1),
+                        UIColor(red: 0.72, green: 0.75, blue: 0.35, alpha: 1))
+            case .boss:
+                return (UIColor(red: 0.55, green: 0.40, blue: 0.62, alpha: 1),
+                        UIColor(red: 0.15, green: 0.15, blue: 0.18, alpha: 1))
+            }
+        }
+
+        /// Walk-cycle textures, built once per kind.
+        var frames: [SKTexture] {
+            if let cached = Kind.textureCache[self] { return cached }
+            let palette = Sprites.zombiePalette(skin: colors.skin, shirt: colors.shirt)
+            let made = [PixelArt.texture(gridA, palette: palette), PixelArt.texture(gridB, palette: palette)]
+            Kind.textureCache[self] = made
+            return made
+        }
+
+        private static var textureCache: [Kind: [SKTexture]] = [:]
+    }
 
     let kind: Kind
     let maxHP: CGFloat
@@ -87,8 +126,8 @@ final class Zombie: SKSpriteNode {
         hp = maxHP
         walkSpeed = kind.walkSpeed * speedScale
 
-        let size = PixelArt.size(Sprites.zombieFrameA, pixel: kind.pixel)
-        let barWidth = size.width * 0.9
+        let size = PixelArt.size(kind.gridA, pixel: kind.pixel)
+        let barWidth = max(24, size.width * 0.9)
         let back = SKSpriteNode(color: UIColor(white: 0, alpha: 0.6), size: CGSize(width: barWidth, height: 4))
         let bar = SKSpriteNode(color: .red, size: CGSize(width: barWidth, height: 4))
         bar.anchorPoint = CGPoint(x: 0, y: 0.5)
@@ -104,8 +143,8 @@ final class Zombie: SKSpriteNode {
         hpBack.addChild(hpBar)
         addChild(hpBack)
 
-        let walk = SKAction.animate(with: kind.frames, timePerFrame: kind == .runner ? 0.15 : 0.3)
-        run(.repeatForever(walk), withKey: "walk")
+        let frameTime: TimeInterval = (kind == .runner || kind == .crawler) ? 0.14 : 0.3
+        run(.repeatForever(.animate(with: kind.frames, timePerFrame: frameTime)), withKey: "walk")
     }
 
     required init?(coder aDecoder: NSCoder) {
@@ -137,13 +176,18 @@ final class GameScene: SKScene {
 
     // MARK: Tuning
     private let bulletSpeed: CGFloat = 900
-    private let groundHeight: CGFloat = 70     // dirt strip the defenders stand on
-    private let defenderY: CGFloat = 14        // feet of the survivor and turrets
-    private var barricadeY: CGFloat { groundHeight + 20 }
-    /// Order turret spots are filled: inner pair first, then the outer pair.
-    private let turretSlotX: [CGFloat] = [0.32, 0.68, 0.13, 0.87]
+    private let groundHeight: CGFloat = 112   // area below the barricade where defenders stand
+    private var barricadeY: CGFloat { groundHeight + 4 }
+    /// Night zombies are tougher and a little faster.
+    private let nightHPMultiplier: CGFloat = 1.6
+    private let nightSpeedMultiplier: CGFloat = 1.1
+    /// Turret spots (fraction of width, height above bottom), filled in this order:
+    /// upper-left, upper-right, lower-left, lower-right.
+    private let turretSlots: [(x: CGFloat, y: CGFloat)] = [(0.20, 62), (0.80, 62), (0.33, 8), (0.80, 8)]
 
     // MARK: Nodes
+    private let sky = SKSpriteNode(color: .white, size: .zero)
+    private let stars = SKNode()
     private let background = SKNode()
     private let survivor = SKSpriteNode(texture: Sprites.survivor,
                                         size: PixelArt.size(Sprites.survivorRows, pixel: 4))
@@ -158,11 +202,16 @@ final class GameScene: SKScene {
     private var hasSetUp = false
     private var lastUpdate: TimeInterval = 0
     private var wave = 0
+    private var waveActive = false
+    private var isNight = false
     private var toSpawn = 0
+    private var totalThisWave = 0
     private var spawnTimer: TimeInterval = 0
     private var spawnInterval: TimeInterval = 1
-    private var intermission: TimeInterval = 0
     private var playerCooldown: TimeInterval = 0
+
+    private static let daySky = UIColor(red: 0.42, green: 0.55, blue: 0.62, alpha: 1)
+    private static let nightSky = UIColor(red: 0.06, green: 0.07, blue: 0.13, alpha: 1)
 
     // MARK: Lifecycle
 
@@ -171,12 +220,21 @@ final class GameScene: SKScene {
         guard !hasSetUp else { return }
         hasSetUp = true
 
+        sky.anchorPoint = .zero
+        sky.zPosition = -20
+        sky.colorBlendFactor = 1
+        sky.color = Self.daySky
+        addChild(sky)
+        stars.zPosition = -19
+        stars.alpha = 0
+        addChild(stars)
         addChild(background)
+
         survivor.anchorPoint = CGPoint(x: 0.5, y: 0)
         survivor.zPosition = 20
         addChild(survivor)
 
-        for _ in turretSlotX {
+        for _ in turretSlots {
             let pad = SKSpriteNode(texture: Sprites.pad, size: PixelArt.size(Sprites.padRows, pixel: 4))
             pad.anchorPoint = CGPoint(x: 0.5, y: 0)
             pad.zPosition = 15
@@ -192,14 +250,20 @@ final class GameScene: SKScene {
     }
 
     private func layout() {
+        sky.size = size
+        drawStars()
         drawBackground()
-        survivor.position = CGPoint(x: size.width / 2, y: defenderY)
+        survivor.position = CGPoint(x: size.width / 2, y: 30)
         for (index, pad) in pads.enumerated() {
-            pad.position = CGPoint(x: size.width * turretSlotX[index], y: defenderY)
+            pad.position = slotPosition(index)
         }
         for (index, turret) in turrets.enumerated() {
-            turret.position = pads[index].position
+            turret.position = slotPosition(index)
         }
+    }
+
+    private func slotPosition(_ index: Int) -> CGPoint {
+        CGPoint(x: size.width * turretSlots[index].x, y: turretSlots[index].y)
     }
 
     /// Dirt, grass line and a wooden barricade, all built from flat blocks for a pixel look.
@@ -211,11 +275,10 @@ final class GameScene: SKScene {
         dirt.anchorPoint = .zero
         background.addChild(dirt)
 
-        var rng = SystemRandomNumberGenerator()
-        for _ in 0..<Int(size.width / 6) {
+        for _ in 0..<Int(size.width / 4) {
             let speck = SKSpriteNode(color: Palette.dirtSpeck, size: CGSize(width: 4, height: 4))
-            speck.position = CGPoint(x: CGFloat.random(in: 0...size.width, using: &rng),
-                                     y: CGFloat.random(in: 4...(groundHeight - 8), using: &rng))
+            speck.position = CGPoint(x: CGFloat.random(in: 0...size.width),
+                                     y: CGFloat.random(in: 4...(groundHeight - 8)))
             background.addChild(speck)
         }
 
@@ -224,8 +287,8 @@ final class GameScene: SKScene {
         grass.position = CGPoint(x: 0, y: groundHeight - 6)
         background.addChild(grass)
 
-        // Barricade: two rails with posts.
-        for railY in [barricadeY - 2, barricadeY + 8] {
+        // Barricade: two rails with posts, right along the line in the sketch.
+        for railY in [barricadeY, barricadeY + 10] {
             let rail = SKSpriteNode(color: Palette.plank, size: CGSize(width: size.width, height: 6))
             rail.anchorPoint = .zero
             rail.position = CGPoint(x: 0, y: railY)
@@ -236,11 +299,35 @@ final class GameScene: SKScene {
         while x < size.width {
             let post = SKSpriteNode(color: Palette.plankDark, size: CGSize(width: 8, height: 24))
             post.anchorPoint = CGPoint(x: 0.5, y: 0)
-            post.position = CGPoint(x: x, y: barricadeY - 6)
+            post.position = CGPoint(x: x, y: barricadeY - 4)
             post.zPosition = 6
             background.addChild(post)
             x += 44
         }
+    }
+
+    private func drawStars() {
+        stars.removeAllChildren()
+        guard size.width > 0, size.height > groundHeight + 40 else { return }
+        for _ in 0..<40 {
+            let star = SKSpriteNode(color: UIColor(white: 1, alpha: CGFloat.random(in: 0.3...0.9)),
+                                    size: CGSize(width: 2, height: 2))
+            star.position = CGPoint(x: CGFloat.random(in: 0...size.width),
+                                    y: CGFloat.random(in: (groundHeight + 40)...size.height))
+            stars.addChild(star)
+        }
+        let moon = SKShapeNode(circleOfRadius: 18)
+        moon.fillColor = UIColor(red: 0.95, green: 0.93, blue: 0.80, alpha: 1)
+        moon.strokeColor = .clear
+        moon.position = CGPoint(x: size.width * 0.82, y: size.height - 50)
+        stars.addChild(moon)
+    }
+
+    private func setNight(_ night: Bool) {
+        isNight = night
+        let duration = 1.2
+        sky.run(.colorize(with: night ? Self.nightSky : Self.daySky, colorBlendFactor: 1, duration: duration))
+        stars.run(.fadeAlpha(to: night ? 1 : 0, duration: duration))
     }
 
     // MARK: Game flow
@@ -251,16 +338,44 @@ final class GameScene: SKScene {
         bullets.forEach { $0.removeFromParent() }
         bullets.removeAll()
         wave = 0
+        waveActive = false
         toSpawn = 0
         playerCooldown = 0
-        intermission = 1.0
+        sky.removeAllActions()
+        sky.color = Self.daySky
+        stars.alpha = 0
+        isNight = false
         syncTurrets()
         isRunning = true
+        showBanner("PRESS ▶ TO START", size: 24, hold: 2.0)
     }
 
     func endGame() {
         isRunning = false
+        waveActive = false
         zombies.forEach { $0.removeAction(forKey: "walk") }
+    }
+
+    /// Called when the player presses Play between waves.
+    func startNextWave() {
+        guard isRunning, !waveActive else { return }
+        wave += 1
+        waveActive = true
+        let night = GameModel.isNight(wave: wave)
+        if night != isNight { setNight(night) }
+
+        totalThisWave = min(60, 5 + wave * 2)
+        toSpawn = totalThisWave
+        spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04)
+        spawnTimer = 0.6
+        model?.waveStarted(wave)
+        showBanner(night ? "NIGHT \(wave)" : "DAY \(wave)", size: 40, hold: 1.0)
+    }
+
+    private func waveCleared() {
+        waveActive = false
+        model?.waveCleared()
+        showBanner("WAVE \(wave) CLEARED", size: 26, hold: 1.2)
     }
 
     /// Show a turret on each owned slot, and an empty pad on the rest.
@@ -274,7 +389,7 @@ final class GameScene: SKScene {
             let index = turrets.count
             let turret = SKSpriteNode(texture: Sprites.turret, size: PixelArt.size(Sprites.turretRows, pixel: 4))
             turret.anchorPoint = CGPoint(x: 0.5, y: 0)
-            turret.position = pads[index].position
+            turret.position = slotPosition(index)
             turret.zPosition = 18
             addChild(turret)
             turrets.append(turret)
@@ -288,37 +403,46 @@ final class GameScene: SKScene {
         }
     }
 
-    private func startNextWave() {
-        wave += 1
-        model?.waveStarted(wave)
-        toSpawn = min(60, 5 + wave * 2)
-        spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04)
-        spawnTimer = 0
-        showBanner("WAVE \(wave)")
+    /// Which zombie types can appear, and how often, by wave.
+    private func randomKind() -> Zombie.Kind {
+        var pool: [(Zombie.Kind, Int)] = [(.walker, 10)]
+        if wave >= 2 { pool.append((.runner, isNight ? 6 : 4)) }
+        if wave >= 3 { pool.append((.crawler, 3)) }
+        if wave >= 4 { pool.append((.tank, isNight ? 3 : 2)) }
+        if wave >= 6 { pool.append((.bloater, 2)) }
+        var roll = Int.random(in: 0..<pool.reduce(0) { $0 + $1.1 })
+        for (kind, weight) in pool {
+            if roll < weight { return kind }
+            roll -= weight
+        }
+        return .walker
     }
 
-    private func spawnZombie() {
+    private func spawnNext() {
         let kind: Zombie.Kind
-        let isFirstOfWave = toSpawn == min(60, 5 + wave * 2)
-        if wave % 5 == 0 && isFirstOfWave {
+        if wave % 5 == 0 && toSpawn == totalThisWave {
             kind = .boss
         } else {
-            let roll = CGFloat.random(in: 0...1)
-            if wave >= 5 && roll < 0.15 {
-                kind = .brute
-            } else if wave >= 3 && roll < 0.40 {
-                kind = .runner
-            } else {
-                kind = .walker
-            }
+            kind = randomKind()
         }
+        let count = kind == .crawler ? 3 : 1
+        for _ in 0..<count {
+            spawnZombie(kind)
+        }
+    }
 
-        let hpScale = pow(1.17, CGFloat(wave - 1))
-        let speedScale = 1 + min(0.6, CGFloat(wave) * 0.02)
+    private func spawnZombie(_ kind: Zombie.Kind) {
+        // Health climbs every wave, and night waves get an extra boost.
+        var hpScale = pow(1.17, CGFloat(wave - 1))
+        var speedScale = 1 + min(0.6, CGFloat(wave) * 0.02)
+        if isNight {
+            hpScale *= nightHPMultiplier
+            speedScale *= nightSpeedMultiplier
+        }
         let zombie = Zombie(kind: kind, hpScale: hpScale, speedScale: speedScale)
         let half = zombie.size.width / 2
         zombie.position = CGPoint(x: CGFloat.random(in: half...max(half, size.width - half)),
-                                  y: size.height + zombie.size.height / 2)
+                                  y: size.height + zombie.size.height / 2 + CGFloat.random(in: 0...30))
         zombie.zPosition = 10
         addChild(zombie)
         zombies.append(zombie)
@@ -330,28 +454,26 @@ final class GameScene: SKScene {
         let rawDt = lastUpdate == 0 ? 0 : min(currentTime - lastUpdate, 1.0 / 20.0)
         lastUpdate = currentTime
         guard isRunning, let model = model else { return }
-        let dt = rawDt * Double(speed) // 2x speed button doubles game time
+        let dt = rawDt * Double(speed) // the 2x button doubles game time
 
-        // Waves
-        if toSpawn > 0 {
-            spawnTimer -= dt
-            if spawnTimer <= 0 {
-                spawnZombie()
-                toSpawn -= 1
-                spawnTimer = spawnInterval
-            }
-        } else if zombies.isEmpty {
-            intermission -= dt
-            if intermission <= 0 {
-                intermission = 2.0
-                startNextWave()
+        // Spawning
+        if waveActive {
+            if toSpawn > 0 {
+                spawnTimer -= dt
+                if spawnTimer <= 0 {
+                    spawnNext()
+                    toSpawn -= 1
+                    spawnTimer = spawnInterval
+                }
+            } else if zombies.isEmpty {
+                waveCleared()
             }
         }
 
         // Zombies walk toward the barricade.
         for zombie in zombies {
             zombie.position.y -= zombie.walkSpeed * CGFloat(dt)
-            if zombie.position.y - zombie.size.height / 2 <= barricadeY + 10 {
+            if zombie.position.y - zombie.size.height / 2 <= barricadeY + 14 {
                 remove(zombie)
                 hitBarricade(at: zombie.position)
                 model.baseHit(damage: zombie.kind.baseDamage)
@@ -439,10 +561,35 @@ final class GameScene: SKScene {
     }
 
     private func kill(_ zombie: Zombie) {
+        guard zombie.parent != nil else { return } // already dead
         remove(zombie)
         model?.zombieKilled(reward: zombie.kind.reward)
         splat(at: zombie.position, size: zombie.size.width)
         popLabel("+\(zombie.kind.reward)", at: zombie.position)
+        if zombie.kind == .bloater {
+            burst(from: zombie)
+        }
+    }
+
+    /// Bloaters pop when killed, damaging every zombie nearby (which can chain).
+    private func burst(from bloater: Zombie) {
+        let radius: CGFloat = 80
+        let damage = bloater.maxHP * 0.6
+        let ring = SKShapeNode(circleOfRadius: radius)
+        ring.position = bloater.position
+        ring.strokeColor = UIColor(red: 0.75, green: 0.85, blue: 0.3, alpha: 0.9)
+        ring.fillColor = UIColor(red: 0.6, green: 0.75, blue: 0.2, alpha: 0.25)
+        ring.zPosition = 30
+        ring.setScale(0.2)
+        addChild(ring)
+        ring.run(.sequence([.group([.scale(to: 1, duration: 0.2), .fadeOut(withDuration: 0.35)]), .removeFromParent()]))
+
+        let caught = zombies.filter {
+            hypot($0.position.x - bloater.position.x, $0.position.y - bloater.position.y) < radius
+        }
+        for victim in caught where victim.takeHit(damage) {
+            kill(victim)
+        }
     }
 
     private func remove(_ zombie: Zombie) {
@@ -469,7 +616,7 @@ final class GameScene: SKScene {
             bit.zPosition = 9
             addChild(bit)
             let angle = CGFloat.random(in: 0...(2 * .pi))
-            let distance = CGFloat.random(in: 10...(size * 0.9))
+            let distance = CGFloat.random(in: 10...max(12, size * 0.9))
             let move = SKAction.moveBy(x: cos(angle) * distance, y: sin(angle) * distance, duration: 0.3)
             move.timingMode = .easeOut
             bit.run(.sequence([move, .wait(forDuration: 0.4), .fadeOut(withDuration: 0.3), .removeFromParent()]))
@@ -504,17 +651,17 @@ final class GameScene: SKScene {
         ]))
     }
 
-    private func showBanner(_ text: String) {
+    private func showBanner(_ text: String, size fontSize: CGFloat, hold: TimeInterval) {
         let label = SKLabelNode(text: text)
         label.fontName = "Menlo-Bold"
-        label.fontSize = 40
+        label.fontSize = fontSize
         label.fontColor = .white
         label.position = CGPoint(x: size.width / 2, y: size.height * 0.6)
         label.zPosition = 50
         label.alpha = 0
         addChild(label)
         label.run(.sequence([
-            .fadeIn(withDuration: 0.2), .wait(forDuration: 1.0),
+            .fadeIn(withDuration: 0.2), .wait(forDuration: hold),
             .fadeOut(withDuration: 0.4), .removeFromParent(),
         ]))
     }

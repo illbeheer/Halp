@@ -85,6 +85,68 @@ enum Sprites {
         ".ZZ...ZZ.",
     ]
 
+    /// Tank: broad, armor-plated (A), slow.
+    static let tankFrameA = [
+        "...ZZZZZ...",
+        "..ZZZZZZZ..",
+        "..ZRZZZRZ..",
+        "..ZZDDDZZ..",
+        "AAAAAAAAAAA",
+        "AZAAAAAAAZA",
+        "ZZAATAATAZZ",
+        "ZZAAAAAAAZZ",
+        "ZZAATAATAZZ",
+        "..NNNNNNN..",
+        "..NNN.NNN..",
+        "..NNN.NNN..",
+        ".ZZZZ.ZZZZ.",
+    ]
+
+    static let tankFrameB = Array(tankFrameA.dropLast(3)) + [
+        ".NNN...NNN.",
+        ".NNN...NNN.",
+        "ZZZZ...ZZZZ",
+    ]
+
+    /// Crawler: small, low to the ground, comes in packs.
+    static let crawlerFrameA = [
+        "..ZZZZZ..",
+        ".ZRZZZRZ.",
+        ".ZZDDDZZ.",
+        "Z.TTTTT.Z",
+        ".ZTTTTTZ.",
+        "Z.NNNNN.Z",
+    ]
+
+    static let crawlerFrameB = [
+        "..ZZZZZ..",
+        ".ZRZZZRZ.",
+        ".ZZDDDZZ.",
+        ".ZTTTTTZ.",
+        "Z.TTTTT.Z",
+        ".ZNNNNNZ.",
+    ]
+
+    /// Bloater: swollen body (T) with pustules (P). Bursts when killed.
+    static let bloaterFrameA = [
+        "...ZZZZZ...",
+        "..ZRZZZRZ..",
+        "..ZZDDDZZ..",
+        ".TTTTTTTTT.",
+        "TTTTPTTTTTT",
+        "TTTTTTTPTTT",
+        "TTPTTTTTTTT",
+        "TTTTTTTTTTT",
+        ".TTTTTPTTT.",
+        "..NN...NN..",
+        "..ZZ...ZZ..",
+    ]
+
+    static let bloaterFrameB = Array(bloaterFrameA.dropLast(2)) + [
+        "...NN.NN...",
+        "...ZZ.ZZ...",
+    ]
+
     static func zombiePalette(skin: UIColor, shirt: UIColor) -> [Character: UIColor] {
         [
             "Z": skin,
@@ -92,6 +154,8 @@ enum Sprites {
             "D": UIColor(red: 0.15, green: 0.05, blue: 0.05, alpha: 1),
             "T": shirt,
             "N": UIColor(red: 0.22, green: 0.20, blue: 0.28, alpha: 1),
+            "A": UIColor(red: 0.45, green: 0.47, blue: 0.52, alpha: 1),
+            "P": UIColor(red: 0.85, green: 0.55, blue: 0.20, alpha: 1),
         ]
     }
 
