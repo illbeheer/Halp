@@ -239,7 +239,7 @@ enum Defense {
 // MARK: - Perks (random drops after wave 5)
 
 enum Perk: CaseIterable, Hashable {
-    case doubleMoney   // 2x kills earned
+    case doubleMoney   // 2x gold earned
     case instaKill     // normal zombies die in one hit; bosses take +30% damage instead
     case poison        // every bullet also poisons (damage over time)
 
@@ -279,7 +279,8 @@ enum Perk: CaseIterable, Hashable {
 // MARK: - Model
 
 /// Shared state between the SwiftUI interface (top bar, upgrades, menus) and the SpriteKit scene.
-/// Kills are the currency: every zombie killed adds to `kills`, which guns, upgrades and slots spend.
+/// Gold is the currency: every zombie killed pays gold, which guns, upgrades and defenses spend.
+/// In Campaign your gold is saved and carries over from region to region (and run to run).
 final class GameModel: ObservableObject {
     enum Phase { case menu, map, playing, regionCleared, gameOver }
     enum Mode { case endless, campaign }
@@ -312,7 +313,10 @@ final class GameModel: ObservableObject {
     /// Seconds until the hero's ability is ready again (0 = ready).
     @Published private(set) var abilityCooldown = 0
     @Published private(set) var wave = 0
-    @Published private(set) var kills = 0          // spendable
+    /// Spendable gold. In Campaign every change is saved, so it carries over between regions.
+    @Published private(set) var gold = 0 {
+        didSet { if mode == .campaign { SavedProgress.campaignGold = gold } }
+    }
     @Published private(set) var totalKills = 0
     @Published private(set) var baseHP = 20
     @Published private(set) var ownedGuns: Set<Gun> = [.pistol]
@@ -359,8 +363,9 @@ final class GameModel: ObservableObject {
     let scene: GameScene
     private static let bestWaveKey = "halp.bestWave"
 
-    private static func freshSlots() -> [SlotState] {
-        (0..<slotCount).map { $0 < freeSlots ? .empty : .locked }
+    /// Endless: 2 free slots, buy the rest. Campaign: every slot is open (you pay for the defenses).
+    private static func freshSlots(allOpen: Bool = false) -> [SlotState] {
+        (0..<slotCount).map { allOpen || $0 < freeSlots ? .empty : .locked }
     }
 
     init() {
@@ -412,6 +417,9 @@ final class GameModel: ObservableObject {
         beginRun()
     }
 
+    /// Gold banked for Campaign (shown on the menu and route).
+    var campaignGold: Int { mode == .campaign && phase == .playing ? gold : SavedProgress.campaignGold }
+
     /// Kept for older call sites: restart the current mode.
     func start() {
         beginRun()
@@ -419,7 +427,7 @@ final class GameModel: ObservableObject {
 
     private func beginRun() {
         wave = 0
-        kills = 0
+        gold = mode == .campaign ? SavedProgress.campaignGold : 0
         totalKills = 0
         baseHP = maxBaseHP
         ownedGuns = [hero.startingGun]
@@ -428,7 +436,7 @@ final class GameModel: ObservableObject {
         abilityCooldown = 0
         lastRescue = nil
         showRoster = false
-        slots = Self.freshSlots()
+        slots = Self.freshSlots(allOpen: mode == .campaign)
         slotLevels = Array(repeating: 0, count: Self.slotCount)
         activePerks = [:]
         selectedSlot = nil
@@ -464,11 +472,11 @@ final class GameModel: ObservableObject {
 
     func owns(_ gun: Gun) -> Bool { ownedGuns.contains(gun) }
 
-    /// A hero's first gun is free; the others cost kills.
+    /// A hero's first gun is free; the others cost gold.
     func price(_ gun: Gun) -> Int { gun == hero.startingGun ? 0 : gun.price }
 
     func canBuyGun(_ gun: Gun) -> Bool {
-        phase == .playing && !owns(gun) && kills >= price(gun)
+        phase == .playing && !owns(gun) && gold >= price(gun)
     }
 
     /// Tapping a gun: buy it if you can, or switch to it if you own it.
@@ -480,7 +488,7 @@ final class GameModel: ObservableObject {
             scene.weaponChanged()
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } else if canBuyGun(gun) {
-            kills -= price(gun)
+            gold -= price(gun)
             ownedGuns.insert(gun)
             equippedGun = gun
             scene.weaponChanged()
@@ -518,12 +526,12 @@ final class GameModel: ObservableObject {
     }
 
     func canBuy(_ upgrade: Upgrade) -> Bool {
-        phase == .playing && isAvailable(upgrade) && kills >= cost(upgrade)
+        phase == .playing && isAvailable(upgrade) && gold >= cost(upgrade)
     }
 
     func buy(_ upgrade: Upgrade) {
         guard canBuy(upgrade) else { return }
-        kills -= cost(upgrade)
+        gold -= cost(upgrade)
         if upgrade == .repair {
             baseHP = min(maxBaseHP, baseHP + 5)
             refreshDanger()
@@ -599,8 +607,8 @@ final class GameModel: ObservableObject {
     }
 
     func unlockSlot(_ index: Int) {
-        guard index == nextLockedSlot, let cost = unlockCost, kills >= cost else { return }
-        kills -= cost
+        guard index == nextLockedSlot, let cost = unlockCost, gold >= cost else { return }
+        gold -= cost
         slots[index] = .empty
         scene.syncSlots()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -609,8 +617,8 @@ final class GameModel: ObservableObject {
     func build(_ defense: Defense, at index: Int) {
         guard slots.indices.contains(index), slots[index] == .empty else { return }
         let cost = buildCost(defense)
-        guard kills >= cost else { return }
-        kills -= cost
+        guard gold >= cost else { return }
+        gold -= cost
         slots[index] = defense == .turret ? .turret : .catapult
         slotLevels[index] = 1
         scene.syncSlots()
@@ -618,8 +626,8 @@ final class GameModel: ObservableObject {
     }
 
     func upgradeDefense(at index: Int) {
-        guard let cost = upgradeCost(slot: index), kills >= cost else { return }
-        kills -= cost
+        guard let cost = upgradeCost(slot: index), gold >= cost else { return }
+        gold -= cost
         slotLevels[index] += 1
         scene.syncSlots()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -725,7 +733,7 @@ final class GameModel: ObservableObject {
     }
 
     func zombieKilled(reward: Int) {
-        kills += reward
+        gold += reward
         totalKills += 1
     }
 

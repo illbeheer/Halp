@@ -282,6 +282,7 @@ final class GameScene: SKScene {
     private var speedMultiplier: CGFloat = 1
     private var extraZombies = 0
     private var typeHeadStart = 0
+    private var goldMultiplier: Double = 1
 
     // Hero ability and passive timers (wave time)
     private var abilityLeft: TimeInterval = 0
@@ -658,6 +659,7 @@ final class GameScene: SKScene {
         speedMultiplier = region?.speedMultiplier ?? 1
         extraZombies = region?.extraZombies ?? 0
         typeHeadStart = region?.typeHeadStart ?? 0
+        goldMultiplier = region?.goldMultiplier ?? 1
         resetHeroTimers()
         survivor.texture = model?.hero.texture ?? Hero.rook.texture
         if size.width > 0 { layout() }   // redraw ground and fog in the region's colors
@@ -773,7 +775,7 @@ final class GameScene: SKScene {
                 lock.alpha = isNextLocked ? 1 : 0.45
                 node.addChild(lock)
                 if isNextLocked, let cost = model.unlockCost {
-                    let price = SKLabelNode(text: "\u{2620}\u{FE0E}\(cost)")
+                    let price = SKLabelNode(text: "🪙\(cost)")
                     price.fontName = "Futura-CondensedExtraBold"
                     price.fontSize = 12
                     price.fontColor = Palette.bloodRed
@@ -1290,7 +1292,8 @@ final class GameScene: SKScene {
     private func kill(_ zombie: Zombie) {
         guard zombie.parent != nil else { return } // already dead
         remove(zombie)
-        let reward = zombie.kind.reward * (perkActive(.doubleMoney) ? 2 : 1)
+        let base = Double(zombie.kind.reward) * goldMultiplier * (perkActive(.doubleMoney) ? 2 : 1)
+        let reward = max(1, Int(base.rounded()))
         model?.zombieKilled(reward: reward)
         splat(at: zombie.position, size: zombie.size.width)
         bloodDecal(at: CGPoint(x: zombie.position.x, y: zombie.position.y - zombie.size.height * 0.3),
@@ -1528,7 +1531,7 @@ final class GameScene: SKScene {
         let label = SKLabelNode(text: text)
         label.fontName = "Futura-CondensedExtraBold"
         label.fontSize = 16
-        label.fontColor = Palette.bone
+        label.fontColor = UIColor(red: 0.95, green: 0.78, blue: 0.30, alpha: 1)
         label.position = point
         label.zPosition = 40
         addChild(label)

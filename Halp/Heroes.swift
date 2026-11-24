@@ -228,6 +228,8 @@ enum Region: Int, CaseIterable, Identifiable {
     var healthMultiplier: CGFloat { pow(1.9, CGFloat(rawValue)) }
     var speedMultiplier: CGFloat { 1 + CGFloat(rawValue) * 0.06 }
     var extraZombies: Int { rawValue * 2 }
+    /// Gold per kill grows as the story goes on (a bit slower than zombie health).
+    var goldMultiplier: Double { pow(1.7, Double(rawValue)) }
     /// Tougher zombie types show up this many waves earlier.
     var typeHeadStart: Int { rawValue * 2 }
 
@@ -293,6 +295,14 @@ enum SavedProgress {
     static var regionsCleared: Int {
         get { UserDefaults.standard.integer(forKey: clearedKey) }
         set { UserDefaults.standard.set(newValue, forKey: clearedKey) }
+    }
+
+    private static let goldKey = "halp.campaignGold"
+
+    /// Campaign gold, carried from region to region and run to run.
+    static var campaignGold: Int {
+        get { UserDefaults.standard.integer(forKey: goldKey) }
+        set { UserDefaults.standard.set(newValue, forKey: goldKey) }
     }
 
     static var selectedHero: Hero {

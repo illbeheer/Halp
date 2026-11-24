@@ -5,8 +5,10 @@ import SpriteKit
 let panelColor = Color(red: 0.05, green: 0.05, blue: 0.06)
 let blood = Color(red: 0.80, green: 0.08, blue: 0.06)
 let bone = Color(red: 0.88, green: 0.85, blue: 0.78)
-/// Kill-count glyph (text-style skull, not the color emoji).
+/// Difficulty glyph (text-style skull, not the color emoji).
 let skull = "\u{2620}\u{FE0E}"
+/// Currency glyph.
+let coin = "🪙"
 
 /// Heavy condensed type for numbers and headings.
 func gritty(_ size: CGFloat) -> Font {
@@ -97,20 +99,20 @@ struct ContentView: View {
     @ViewBuilder private var slotButtons: some View {
         if let index = model.selectedSlot {
             if model.slots[index] == .locked {
-                if index == model.nextLockedSlot, let cost = model.unlockCost, model.kills >= cost {
-                    Button("Unlock for \(skull) \(cost)") { model.unlockSlot(index) }
+                if index == model.nextLockedSlot, let cost = model.unlockCost, model.gold >= cost {
+                    Button("Unlock for \(coin) \(cost)") { model.unlockSlot(index) }
                 }
             } else if model.slots[index] == .empty {
                 let turretCost = model.buildCost(.turret)
                 let catapultCost = model.buildCost(.catapult)
-                if model.kills >= turretCost {
-                    Button("Turret – \(skull) \(turretCost)") { model.build(.turret, at: index) }
+                if model.gold >= turretCost {
+                    Button("Turret – \(coin) \(turretCost)") { model.build(.turret, at: index) }
                 }
-                if model.kills >= catapultCost {
-                    Button("Catapult – \(skull) \(catapultCost)") { model.build(.catapult, at: index) }
+                if model.gold >= catapultCost {
+                    Button("Catapult – \(coin) \(catapultCost)") { model.build(.catapult, at: index) }
                 }
-            } else if let cost = model.upgradeCost(slot: index), model.kills >= cost {
-                Button("Upgrade to LV \(model.slotLevels[index] + 1) – \(skull) \(cost)") {
+            } else if let cost = model.upgradeCost(slot: index), model.gold >= cost {
+                Button("Upgrade to LV \(model.slotLevels[index] + 1) – \(coin) \(cost)") {
                     model.upgradeDefense(at: index)
                 }
             }
@@ -125,16 +127,16 @@ struct ContentView: View {
             guard index == model.nextLockedSlot, let cost = model.unlockCost else {
                 return "Slots unlock in order. Unlock the brighter padlock first."
             }
-            var text = "Unlock this slot for \(skull) \(cost)."
-            if model.kills < cost {
-                text += "\n\nYou have \(skull) \(model.kills)."
+            var text = "Unlock this slot for \(coin) \(cost)."
+            if model.gold < cost {
+                text += "\n\nYou have \(coin) \(model.gold)."
             }
             return text
         case .empty:
-            var text = "Turret (\(skull) \(model.buildCost(.turret))): fast shots at one zombie.\n"
-                + "Catapult (\(skull) \(model.buildCost(.catapult))): slow, lobs rocks that hit a whole group."
-            if model.kills < min(model.buildCost(.turret), model.buildCost(.catapult)) {
-                text += "\n\nYou have \(skull) \(model.kills). Kill more zombies!"
+            var text = "Turret (\(coin) \(model.buildCost(.turret))): fast shots at one zombie.\n"
+                + "Catapult (\(coin) \(model.buildCost(.catapult))): slow, lobs rocks that hit a whole group."
+            if model.gold < min(model.buildCost(.turret), model.buildCost(.catapult)) {
+                text += "\n\nYou have \(coin) \(model.gold). Kill more zombies for gold!"
             }
             return text
         case .turret:
@@ -153,8 +155,8 @@ struct ContentView: View {
 
     private func upgradeNote(_ index: Int) -> String {
         guard let cost = model.upgradeCost(slot: index) else { return "\n\nFully upgraded." }
-        if model.kills < cost {
-            return "\n\nNext level: \(skull) \(cost). You have \(skull) \(model.kills)."
+        if model.gold < cost {
+            return "\n\nNext level: \(coin) \(cost). You have \(coin) \(model.gold)."
         }
         return ""
     }
@@ -209,7 +211,7 @@ private struct TopBar: View {
             DayNightIndicator(isNight: model.isNight, upcoming: !model.waveInProgress)
 
             HStack(alignment: .center) {
-                // Wave number (big and bloody), barricade health and kills (currency).
+                // Wave number (big and bloody), barricade health and gold.
                 VStack(alignment: .leading, spacing: 2) {
                     Text(regionCaption)
                         .font(gritty(11))
@@ -219,11 +221,11 @@ private struct TopBar: View {
                     WaveNumber(label: model.waveLabel, isNight: model.isNightWave && model.waveInProgress)
                     HealthBar(value: model.baseHP, max: model.maxBaseHP)
                     HStack(spacing: 4) {
-                        Text(skull)
-                            .foregroundStyle(blood)
-                        Text("\(model.kills)")
+                        Text(coin)
+                            .font(.system(size: 14))
+                        Text("\(model.gold)")
                             .font(gritty(17))
-                            .foregroundStyle(bone)
+                            .foregroundStyle(Color(red: 0.95, green: 0.78, blue: 0.30))
                             .monospacedDigit()
                     }
                 }
@@ -511,7 +513,7 @@ private struct GunChip: View {
                 Text(gun.shortName.uppercased())
                     .font(gritty(13))
                     .lineLimit(1)
-                Text(owned ? (equipped ? "EQUIPPED" : "OWNED") : "\(skull) \(model.price(gun))")
+                Text(owned ? (equipped ? "EQUIPPED" : "OWNED") : "\(coin) \(model.price(gun))")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(owned ? bone.opacity(equipped ? 1 : 0.6)
                                            : (affordable ? blood : bone.opacity(0.35)))
@@ -532,7 +534,7 @@ private struct GunChip: View {
         }
         .buttonStyle(.plain)
         .disabled(!owned && !affordable)
-        .accessibilityLabel(owned ? "\(gun.name)\(equipped ? ", equipped" : "")" : "Buy \(gun.name) for \(model.price(gun)) kills")
+        .accessibilityLabel(owned ? "\(gun.name)\(equipped ? ", equipped" : "")" : "Buy \(gun.name) for \(model.price(gun)) gold")
     }
 }
 
@@ -562,7 +564,7 @@ private struct UpgradeCard: View {
                     .foregroundStyle(bone.opacity(0.6))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                Text(maxed ? "MAX" : "\(skull) \(model.cost(upgrade))")
+                Text(maxed ? "MAX" : "\(coin) \(model.cost(upgrade))")
                     .font(gritty(15))
                     .foregroundStyle(maxed ? bone.opacity(0.5) : (affordable ? blood : bone.opacity(0.35)))
             }

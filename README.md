@@ -6,8 +6,8 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 
 ## Modes
 
-- **Campaign:** travel the route through 6 regions: Farmlands → Highway → Suburbs → Hospital → Military Base → The Lab. Each region is a fresh run of 8 waves (plus nights) ending with a boss, with its own colors, and is far harder than the last (zombie health ×1.9 per region, more zombies, tough types earlier). Clearing a region unlocks the next and **rescues a hero**.
-- **Endless:** the classic mode. Survive as long as you can with any hero you've rescued.
+- **Campaign:** travel the route through 6 regions: Farmlands → Highway → Suburbs → Hospital → Military Base → The Lab. Each region is 8 waves (plus nights) ending with a boss, with its own colors, and is far harder than the last (zombie health ×1.9 per region, more zombies, tough types earlier), but pays more too (gold per kill ×1.7 per region). In Campaign **all 8 slots are open**; you only pay for turrets and catapults. **Gold carries over** between regions and runs, win or lose; guns, upgrades and defenses start fresh each region. Clearing a region unlocks the next and **rescues a hero**.
+- **Endless:** the classic mode. Gold starts at zero, only 2 slots are open (buy the rest). Survive as long as you can with any hero you've rescued.
 
 ## Heroes
 
@@ -22,7 +22,7 @@ One hero fights at a time. Swap from the menu, the route, the armory's hero butt
 | Torch (Pyro) | Hospital | Flamethrower, Shotgun, Revolver | Bullets set zombies on fire | Firewall across the field for 5s (25s) |
 | Sarge (Soldier) | Military Base | Assault Rifle, Shotgun, LMG | +30% magazine, 25% faster reload | Airstrike: 6 blasts down the field (30s) |
 
-Progress (cleared regions, rescued heroes, chosen hero, best endless wave) is saved on the device.
+Progress (cleared regions, rescued heroes, chosen hero, campaign gold, best endless wave) is saved on the device.
 
 ## How it plays
 

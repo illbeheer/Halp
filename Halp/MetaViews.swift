@@ -25,7 +25,8 @@ struct MenuOverlay: View {
 
             VStack(spacing: 10) {
                 MenuButton(title: "CAMPAIGN",
-                           subtitle: "Travel region to region. Rescue heroes.",
+                           subtitle: model.campaignGold > 0 ? "\(coin) \(model.campaignGold) gold saved"
+                                                            : "Travel region to region. Rescue heroes.",
                            primary: true) { model.openMap() }
                 MenuButton(title: "ENDLESS",
                            subtitle: model.bestWave > 0 ? "Best: wave \(GameModel.waveLabel(model.bestWave))"
@@ -95,7 +96,12 @@ struct CampaignMap: View {
                     .onTapGesture { model.showRoster = true }
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.top, 10)
+
+            Text("\(coin) \(model.campaignGold) GOLD · CARRIES OVER BETWEEN REGIONS")
+                .font(gritty(13))
+                .foregroundStyle(Color(red: 0.95, green: 0.78, blue: 0.30))
+                .padding(.bottom, 10)
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -122,6 +128,11 @@ struct CampaignMap: View {
 private struct RegionStop: View {
     let region: Region
     @ObservedObject var model: GameModel
+
+    private func goldText(_ region: Region) -> String {
+        let m = region.goldMultiplier
+        return m < 10 ? String(format: "%.1f", m) : String(format: "%.0f", m)
+    }
 
     var body: some View {
         let unlocked = model.isUnlocked(region)
@@ -155,7 +166,7 @@ private struct RegionStop: View {
                         Text(String(repeating: skull, count: region.rawValue + 1))
                             .font(.system(size: 12))
                             .foregroundStyle(blood.opacity(unlocked ? 1 : 0.4))
-                        Text("\(region.waves) WAVES")
+                        Text("\(region.waves) WAVES · GOLD ×\(goldText(region))")
                             .font(gritty(11))
                             .foregroundStyle(bone.opacity(0.5))
                         Spacer()
