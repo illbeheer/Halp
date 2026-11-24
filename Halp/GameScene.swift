@@ -188,6 +188,12 @@ final class Zombie: SKSpriteNode {
 
 // MARK: - Bullet
 
+/// A dropped perk waiting on the battlefield to be tapped.
+private final class PerkToken: SKShapeNode {
+    var perk: Perk = .doubleMoney
+    var collected = false
+}
+
 private final class Bullet: SKSpriteNode {
     var velocity = CGVector.zero
     var damage: CGFloat = 1
@@ -695,17 +701,25 @@ final class GameScene: SKScene {
 
     // MARK: Perks
 
+    /// How long a dropped perk waits to be tapped before it vanishes (blinks for the last 2.5s).
+    private let perkTokenLifetime: TimeInterval = 7
+
     /// After wave 5, zombies have a small chance to drop a perk (bosses always do).
+    /// The perk stays where the zombie died until you tap it, or it fades away.
     private func maybeDropPerk(from zombie: Zombie) {
         guard wave > GameModel.perksAfterWave else { return }
         guard zombie.kind == .boss || CGFloat.random(in: 0...1) < GameModel.perkDropChance else { return }
         guard let perk = Perk.allCases.randomElement() else { return }
 
-        let token = SKShapeNode(circleOfRadius: 16)
+        let token = PerkToken()
+        token.path = CGPath(ellipseIn: CGRect(x: -16, y: -16, width: 32, height: 32), transform: nil)
+        token.perk = perk
         token.fillColor = perk.color.withAlphaComponent(0.35)
         token.strokeColor = perk.color
         token.lineWidth = 3
-        token.position = zombie.position
+        // Keep it clear of the defense line so it doesn't cover the slots.
+        token.position = CGPoint(x: min(max(zombie.position.x, 24), size.width - 24),
+                                 y: max(zombie.position.y, barricadeY + 48))
         token.zPosition = 45
         token.name = "fx"
         let icon = SKLabelNode(text: perk.emoji)
@@ -714,13 +728,31 @@ final class GameScene: SKScene {
         token.addChild(icon)
         addChild(token)
 
-        // Pop out, then fly up to the HUD and switch on.
-        let fly = SKAction.move(to: CGPoint(x: size.width / 2, y: size.height - 24), duration: 0.6)
-        fly.timingMode = .easeIn
+        // Pop out and bob in place; blink near the end, then disappear if not collected.
         token.setScale(0.3)
+        token.run(.sequence([.scale(to: 1.3, duration: 0.15), .scale(to: 1, duration: 0.1)]))
+        let bob = SKAction.sequence([.moveBy(x: 0, y: 5, duration: 0.4), .moveBy(x: 0, y: -5, duration: 0.4)])
+        token.run(.repeatForever(bob), withKey: "bob")
+        let blink = SKAction.repeat(.sequence([.fadeAlpha(to: 0.25, duration: 0.125),
+                                               .fadeAlpha(to: 1, duration: 0.125)]), count: 10)
         token.run(.sequence([
-            .scale(to: 1.3, duration: 0.15), .scale(to: 1, duration: 0.1),
-            .wait(forDuration: 0.4), fly,
+            .wait(forDuration: perkTokenLifetime - 2.5), blink,
+            .fadeOut(withDuration: 0.2), .removeFromParent(),
+        ]), withKey: "life")
+    }
+
+    /// Collect a tapped perk: it flies up to the HUD and switches on.
+    private func collect(_ token: PerkToken) {
+        guard !token.collected else { return }
+        token.collected = true
+        token.removeAllActions()
+        token.alpha = 1
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let fly = SKAction.move(to: CGPoint(x: size.width / 2, y: size.height - 24), duration: 0.35)
+        fly.timingMode = .easeIn
+        let perk = token.perk
+        token.run(.sequence([
+            .group([fly, .scale(to: 0.6, duration: 0.35)]),
             .run { [weak self] in self?.activate(perk) },
             .removeFromParent(),
         ]))
@@ -798,6 +830,16 @@ final class GameScene: SKScene {
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard isRunning, let point = touches.first?.location(in: self) else { return }
+
+        // Perks first: tap one to collect it (generous hit area for thumbs).
+        let tokens = children.compactMap { $0 as? PerkToken }.filter { !$0.collected }
+        if let token = tokens.min(by: { hypot($0.position.x - point.x, $0.position.y - point.y)
+                                        < hypot($1.position.x - point.x, $1.position.y - point.y) }),
+           hypot(token.position.x - point.x, token.position.y - point.y) < 34 {
+            collect(token)
+            return
+        }
+
         for (index, node) in slotNodes.enumerated() {
             let center = CGPoint(x: node.position.x, y: node.position.y + 18)
             if abs(point.x - center.x) < 26 && abs(point.y - center.y) < 26 {

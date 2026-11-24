@@ -12,7 +12,7 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 - **Defense line:** the survivor stands in the middle with **8 slots** in two rows of four, two on each side.
   - 2 slots are free from the start. The other 6 are locked and unlock **in order**: one free every 4 waves, or buy the next one early with kills.
   - Tap an unlocked slot to build a **Turret** (fast, one target) or a **Catapult** (slow, lobs rocks that splash a group). Each extra one costs more.
-- **Perks:** after wave 5, killed zombies have a small chance (4%, bosses always) to drop a perk. It flies to the top and activates. Timers show at the top of the battlefield and only run down during waves.
+- **Perks:** after wave 5, killed zombies have a small chance (4%, bosses always) to drop a perk. Tap it to collect it before it blinks out (about 7 seconds); it then flies to the top and activates. Timers show at the top of the battlefield and only run down during waves.
 
 | Perk | Lasts | Effect |
 | --- | --- | --- |
