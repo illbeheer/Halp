@@ -1,10 +1,10 @@
 import SwiftUI
 import SpriteKit
 
-// MARK: - Guns (the survivor's weapon classes)
+// MARK: - Guns (weapon classes; each hero carries a set of three)
 
 enum Gun: Int, CaseIterable, Identifiable {
-    case pistol, smg, shotgun, rifle, marksman, lmg
+    case pistol, smg, shotgun, rifle, marksman, lmg, revolver, crossbow, flamethrower
 
     var id: Self { self }
 
@@ -16,12 +16,16 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return "Assault Rifle"
         case .marksman: return "Marksman"
         case .lmg: return "LMG"
+        case .revolver: return "Revolver"
+        case .crossbow: return "Crossbow"
+        case .flamethrower: return "Flamethrower"
         }
     }
 
     var shortName: String {
         switch self {
         case .rifle: return "Rifle"
+        case .flamethrower: return "Flamer"
         default: return name
         }
     }
@@ -35,10 +39,13 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return "Fast and hard-hitting."
         case .marksman: return "Slow, huge damage, pierces 4."
         case .lmg: return "Huge mag, long reload."
+        case .revolver: return "Six heavy rounds."
+        case .crossbow: return "Bolts skewer up to 5."
+        case .flamethrower: return "Short-range stream that burns."
         }
     }
 
-    /// Kills to buy it. The pistol is free.
+    /// Kills to buy it (a hero's first gun is always free).
     var price: Int {
         switch self {
         case .pistol: return 0
@@ -47,6 +54,9 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return 250
         case .marksman: return 400
         case .lmg: return 800
+        case .revolver: return 120
+        case .crossbow: return 150
+        case .flamethrower: return 300
         }
     }
 
@@ -58,6 +68,9 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return 1.1
         case .marksman: return 5.0
         case .lmg: return 1.2
+        case .revolver: return 2.4
+        case .crossbow: return 3.0
+        case .flamethrower: return 0.3
         }
     }
 
@@ -70,6 +83,9 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return 0.16
         case .marksman: return 1.0
         case .lmg: return 0.09
+        case .revolver: return 0.5
+        case .crossbow: return 0.85
+        case .flamethrower: return 0.06
         }
     }
 
@@ -81,6 +97,9 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return 30
         case .marksman: return 5
         case .lmg: return 100
+        case .revolver: return 6
+        case .crossbow: return 8
+        case .flamethrower: return 60
         }
     }
 
@@ -92,6 +111,9 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return 1.8
         case .marksman: return 2.4
         case .lmg: return 4.0
+        case .revolver: return 1.6
+        case .crossbow: return 1.8
+        case .flamethrower: return 2.5
         }
     }
 
@@ -107,22 +129,59 @@ enum Gun: Int, CaseIterable, Identifiable {
         case .rifle: return 0.04
         case .marksman: return 0
         case .lmg: return 0.07
+        case .revolver: return 0.02
+        case .crossbow: return 0
+        case .flamethrower: return 0.28
         }
     }
 
     /// How many zombies one bullet can pass through.
-    var pierce: Int { self == .marksman ? 4 : 1 }
+    var pierce: Int {
+        switch self {
+        case .marksman: return 4
+        case .crossbow: return 5
+        default: return 1
+        }
+    }
 
     /// How far bullets fly before fading (nil = across the whole screen).
-    var range: CGFloat? { self == .shotgun ? 300 : nil }
+    var range: CGFloat? {
+        switch self {
+        case .shotgun: return 300
+        case .flamethrower: return 200
+        default: return nil
+        }
+    }
+
+    /// Sets zombies on fire (damage over time).
+    var burns: Bool { self == .flamethrower }
+
+    var bulletSize: CGSize {
+        switch self {
+        case .flamethrower: return CGSize(width: 7, height: 7)
+        case .crossbow: return CGSize(width: 2, height: 14)
+        case .marksman, .revolver: return CGSize(width: 3, height: 12)
+        default: return CGSize(width: 3, height: 9)
+        }
+    }
+
+    var bulletColor: UIColor {
+        switch self {
+        case .flamethrower: return UIColor(red: 1.0, green: 0.45, blue: 0.10, alpha: 0.9)
+        case .crossbow: return UIColor(red: 0.75, green: 0.65, blue: 0.50, alpha: 1)
+        default: return Palette.bullet
+        }
+    }
 
     /// Better guns cost more to upgrade.
     var upgradeCostScale: Double {
         switch self {
         case .pistol: return 1
         case .smg: return 1.4
-        case .shotgun: return 1.8
+        case .shotgun, .revolver: return 1.8
+        case .crossbow: return 2
         case .rifle: return 2.6
+        case .flamethrower: return 2.8
         case .marksman: return 3.4
         case .lmg: return 5
         }
@@ -222,7 +281,8 @@ enum Perk: CaseIterable, Hashable {
 /// Shared state between the SwiftUI interface (top bar, upgrades, menus) and the SpriteKit scene.
 /// Kills are the currency: every zombie killed adds to `kills`, which guns, upgrades and slots spend.
 final class GameModel: ObservableObject {
-    enum Phase { case menu, playing, gameOver }
+    enum Phase { case menu, map, playing, regionCleared, gameOver }
+    enum Mode { case endless, campaign }
 
     let maxBaseHP = 20
 
@@ -238,6 +298,19 @@ final class GameModel: ObservableObject {
     static let perkDropChance: CGFloat = 0.04
 
     @Published private(set) var phase: Phase = .menu
+    @Published private(set) var mode: Mode = .endless
+    /// The campaign region being played (nil in Endless).
+    @Published private(set) var region: Region?
+
+    // Heroes and saved progress
+    @Published private(set) var hero: Hero
+    @Published private(set) var rescuedHeroes: Set<Hero>
+    @Published private(set) var regionsCleared: Int
+    /// Set when a region is cleared, for the "rescued" screen.
+    @Published private(set) var lastRescue: Hero?
+    @Published var showRoster = false
+    /// Seconds until the hero's ability is ready again (0 = ready).
+    @Published private(set) var abilityCooldown = 0
     @Published private(set) var wave = 0
     @Published private(set) var kills = 0          // spendable
     @Published private(set) var totalKills = 0
@@ -292,6 +365,11 @@ final class GameModel: ObservableObject {
 
     init() {
         bestWave = UserDefaults.standard.double(forKey: Self.bestWaveKey)
+        let rescued = SavedProgress.rescued
+        rescuedHeroes = rescued
+        regionsCleared = SavedProgress.regionsCleared
+        let saved = SavedProgress.selectedHero
+        hero = rescued.contains(saved) ? saved : .rook
         scene = GameScene(size: CGSize(width: 390, height: 600))
         scene.scaleMode = .resizeFill
         scene.model = self
@@ -299,14 +377,57 @@ final class GameModel: ObservableObject {
 
     // MARK: Flow
 
+    // MARK: Menus and modes
+
+    func startEndless() {
+        mode = .endless
+        region = nil
+        beginRun()
+    }
+
+    func openMap() {
+        selectedSlot = nil
+        isPaused = false
+        phase = .map
+    }
+
+    func backToMenu() {
+        selectedSlot = nil
+        isPaused = false
+        phase = .menu
+    }
+
+    func isUnlocked(_ region: Region) -> Bool { region.rawValue <= regionsCleared }
+    func isCleared(_ region: Region) -> Bool { region.rawValue < regionsCleared }
+
+    func startRegion(_ region: Region) {
+        guard isUnlocked(region) else { return }
+        mode = .campaign
+        self.region = region
+        beginRun()
+    }
+
+    /// Play the same mode/region again after losing.
+    func retry() {
+        beginRun()
+    }
+
+    /// Kept for older call sites: restart the current mode.
     func start() {
+        beginRun()
+    }
+
+    private func beginRun() {
         wave = 0
         kills = 0
         totalKills = 0
         baseHP = maxBaseHP
-        ownedGuns = [.pistol]
-        equippedGun = .pistol
+        ownedGuns = [hero.startingGun]
+        equippedGun = hero.startingGun
         gunLevels = [:]
+        abilityCooldown = 0
+        lastRescue = nil
+        showRoster = false
         slots = Self.freshSlots()
         slotLevels = Array(repeating: 0, count: Self.slotCount)
         activePerks = [:]
@@ -343,8 +464,11 @@ final class GameModel: ObservableObject {
 
     func owns(_ gun: Gun) -> Bool { ownedGuns.contains(gun) }
 
+    /// A hero's first gun is free; the others cost kills.
+    func price(_ gun: Gun) -> Int { gun == hero.startingGun ? 0 : gun.price }
+
     func canBuyGun(_ gun: Gun) -> Bool {
-        phase == .playing && !owns(gun) && kills >= gun.price
+        phase == .playing && !owns(gun) && kills >= price(gun)
     }
 
     /// Tapping a gun: buy it if you can, or switch to it if you own it.
@@ -356,7 +480,7 @@ final class GameModel: ObservableObject {
             scene.weaponChanged()
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         } else if canBuyGun(gun) {
-            kills -= gun.price
+            kills -= price(gun)
             ownedGuns.insert(gun)
             equippedGun = gun
             scene.weaponChanged()
@@ -425,11 +549,16 @@ final class GameModel: ObservableObject {
     // MARK: Gun stats read by the scene (equipped gun)
 
     var gunDamage: CGFloat { equippedGun.baseDamage * pow(1.3, CGFloat(level(.damage))) }
-    var gunInterval: TimeInterval { equippedGun.baseInterval * pow(0.9, Double(level(.fireRate))) }
-    var magazineSize: Int {
-        Int((Double(equippedGun.baseMagazine) * (1 + 0.25 * Double(level(.magazine)))).rounded())
+    var gunInterval: TimeInterval {
+        equippedGun.baseInterval * pow(0.9, Double(level(.fireRate))) * hero.fireIntervalMultiplier
     }
-    var reloadTime: TimeInterval { equippedGun.baseReload * pow(0.88, Double(level(.magazine))) }
+    var magazineSize: Int {
+        Int((Double(equippedGun.baseMagazine) * (1 + 0.25 * Double(level(.magazine)))
+             * hero.magazineMultiplier).rounded())
+    }
+    var reloadTime: TimeInterval {
+        equippedGun.baseReload * pow(0.88, Double(level(.magazine))) * hero.reloadMultiplier
+    }
 
     // MARK: Slots
 
@@ -499,13 +628,63 @@ final class GameModel: ObservableObject {
     // MARK: Defense stats read by the scene (per slot, by level)
 
     /// Turrets: fast, single target.
-    func turretDamage(slot index: Int) -> CGFloat { 0.7 * pow(1.35, CGFloat(slotLevels[index] - 1)) }
+    func turretDamage(slot index: Int) -> CGFloat {
+        0.7 * pow(1.35, CGFloat(slotLevels[index] - 1)) * hero.defenseDamageMultiplier
+    }
     func turretInterval(slot index: Int) -> TimeInterval { 0.9 * pow(0.9, Double(slotLevels[index] - 1)) }
 
     /// Catapults: slow, splash damage.
-    func catapultDamage(slot index: Int) -> CGFloat { 2.2 * pow(1.35, CGFloat(slotLevels[index] - 1)) }
+    func catapultDamage(slot index: Int) -> CGFloat {
+        2.2 * pow(1.35, CGFloat(slotLevels[index] - 1)) * hero.defenseDamageMultiplier
+    }
     func catapultInterval(slot index: Int) -> TimeInterval { 2.6 * pow(0.92, Double(slotLevels[index] - 1)) }
     func catapultRadius(slot index: Int) -> CGFloat { 50 + CGFloat(slotLevels[index] - 1) * 3 }
+
+    // MARK: Heroes
+
+    func isRescued(_ hero: Hero) -> Bool { rescuedHeroes.contains(hero) }
+
+    /// Heroes can be swapped outside a run, or between waves.
+    var canSwapHero: Bool { phase != .playing || !waveInProgress }
+
+    /// Tapping the survivor on the battlefield opens the roster between waves.
+    func heroTapped() {
+        guard phase == .playing, canSwapHero else { return }
+        showRoster = true
+    }
+
+    func selectHero(_ newHero: Hero) {
+        guard isRescued(newHero), canSwapHero, newHero != hero else { return }
+        hero = newHero
+        SavedProgress.selectedHero = newHero
+        if phase == .playing {
+            // Their own weapon set: the first gun is free; anything already bought stays bought.
+            ownedGuns.insert(newHero.startingGun)
+            equippedGun = newHero.startingGun
+            abilityCooldown = 0
+            scene.heroChanged()
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    var abilityReady: Bool { abilityCooldown == 0 }
+    var canUseAbility: Bool { phase == .playing && waveInProgress && !isPaused && abilityReady }
+
+    func useAbility() {
+        guard canUseAbility else { return }
+        scene.useAbility()
+    }
+
+    /// The scene reports the cooldown in whole seconds.
+    func abilityCooldownChanged(_ seconds: Int) {
+        abilityCooldown = seconds
+    }
+
+    func repairBarricade(_ amount: Int) {
+        guard phase == .playing else { return }
+        baseHP = min(maxBaseHP, baseHP + amount)
+        refreshDanger()
+    }
 
     // MARK: Events from the scene
 
@@ -517,6 +696,31 @@ final class GameModel: ObservableObject {
 
     func waveCleared() {
         waveInProgress = false
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    /// In Campaign: how many day waves this region has.
+    var regionWaves: Int? { mode == .campaign ? region?.waves : nil }
+
+    /// The scene calls this when the region's last wave is cleared.
+    func regionCompleted() {
+        guard mode == .campaign, let region = region else { return }
+        waveInProgress = false
+        isPaused = false
+        selectedSlot = nil
+        if region.rawValue + 1 > regionsCleared {
+            regionsCleared = region.rawValue + 1
+            SavedProgress.regionsCleared = regionsCleared
+        }
+        if let rescued = region.rescue, !rescuedHeroes.contains(rescued) {
+            rescuedHeroes.insert(rescued)
+            SavedProgress.rescued = rescuedHeroes
+            lastRescue = rescued
+        } else {
+            lastRescue = nil
+        }
+        scene.endGame()
+        phase = .regionCleared
         UINotificationFeedbackGenerator().notificationOccurred(.success)
     }
 
@@ -541,7 +745,7 @@ final class GameModel: ObservableObject {
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         refreshDanger()
         if baseHP == 0 {
-            if progress > bestWave {
+            if mode == .endless && progress > bestWave {
                 bestWave = progress
                 isNewBest = true
                 UserDefaults.standard.set(progress, forKey: Self.bestWaveKey)

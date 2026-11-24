@@ -123,6 +123,36 @@ enum Sprites {
                 ".WW",
                 ".WW",
             ]
+        case .revolver:
+            return [
+                "G.",
+                "G.",
+                "GG",
+                "DD",
+                "GW",
+                ".W",
+            ]
+        case .crossbow:
+            return [
+                "..G..",
+                "W.G.W",
+                ".WGW.",
+                "..G..",
+                "..W..",
+                "..W..",
+                "..W..",
+            ]
+        case .flamethrower:
+            return [
+                ".R.",
+                ".G.",
+                ".G.",
+                "GGG",
+                "TGG",
+                "TGG",
+                "TDG",
+                ".WW",
+            ]
         case .lmg:
             return [
                 ".GG.",
@@ -144,6 +174,8 @@ enum Sprites {
         "D": UIColor(red: 0.20, green: 0.21, blue: 0.23, alpha: 1),
         "W": UIColor(red: 0.40, green: 0.26, blue: 0.14, alpha: 1),
         "S": UIColor(red: 0.15, green: 0.15, blue: 0.17, alpha: 1),
+        "R": UIColor(red: 1.00, green: 0.45, blue: 0.10, alpha: 1),
+        "T": UIColor(red: 0.60, green: 0.18, blue: 0.12, alpha: 1),
     ]
 
     private static var gunTextureCache: [Gun: SKTexture] = [:]

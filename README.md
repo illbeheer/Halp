@@ -4,6 +4,26 @@ An endless zombie wave defense game for iPhone, built with SwiftUI and SpriteKit
 
 A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zombies pour down from the top. The survivor shoots automatically; you spend **kills** on upgrades to keep up.
 
+## Modes
+
+- **Campaign:** travel the route through 6 regions: Farmlands → Highway → Suburbs → Hospital → Military Base → The Lab. Each region is a fresh run of 8 waves (plus nights) ending with a boss, with its own colors, and is far harder than the last (zombie health ×1.9 per region, more zombies, tough types earlier). Clearing a region unlocks the next and **rescues a hero**.
+- **Endless:** the classic mode. Survive as long as you can with any hero you've rescued.
+
+## Heroes
+
+One hero fights at a time. Swap from the menu, the route, the armory's hero button, or by tapping your hero between waves. Each has a 3-gun set (the first is free), an always-on passive and a tap ability (button at the bottom-left of the battlefield, recharges during waves).
+
+| Hero | Rescued in | Guns | Passive | Ability |
+| --- | --- | --- | --- | --- |
+| Rook (Survivor) | start | Pistol, SMG, Assault Rifle | Fires 15% faster | Frag Grenade into the nearest pack (20s) |
+| Mags (Mechanic) | Farmlands | Shotgun, SMG, LMG | Turrets/catapults +25% damage | Overclock: defenses fire 2.5x faster for 6s (25s) |
+| Doc (Medic) | Highway | Pistol, Crossbow, Marksman | Barricade +1 HP every 10s | Patch Up: +6 HP (30s) |
+| Vix (Hunter) | Suburbs | Crossbow, Revolver, Marksman | Bullets pierce one extra zombie | Deadeye: 2.5x damage for 6s (22s) |
+| Torch (Pyro) | Hospital | Flamethrower, Shotgun, Revolver | Bullets set zombies on fire | Firewall across the field for 5s (25s) |
+| Sarge (Soldier) | Military Base | Assault Rifle, Shotgun, LMG | +30% magazine, 25% faster reload | Airstrike: 6 blasts down the field (30s) |
+
+Progress (cleared regions, rescued heroes, chosen hero, best endless wave) is saved on the device.
+
 ## How it plays
 
 - **Top bar:** wave, barricade health and kills (your currency) on the left. A **sun/moon** in the top middle shows whether it's day or night. **Play** and **Pause** are top right: Play sends the next wave (or resumes), Pause freezes the current one.
@@ -13,7 +33,7 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
   - Only 2 slots are free. The other 6 are locked and must be **bought, in order**.
   - Tap an unlocked slot to build a **Turret** (fast, one target) or a **Catapult** (slow, lobs rocks that splash a group). Each extra one costs more.
   - Tap a built turret or catapult to **upgrade it** (up to LV 10). Each one levels up separately.
-- **Guns:** the survivor starts with a pistol. Buy and switch guns in the armory row at the bottom; each gun has its own magazine, reload and upgrades (Damage, Fire Rate, Magazine). Better guns cost more to upgrade.
+- **Guns:** each hero carries 3 of these (their first one is free). Buy and switch in the armory row at the bottom; each gun has its own magazine, reload and upgrades (Damage, Fire Rate, Magazine). Better guns cost more to upgrade.
 
 | Gun | Price | Plays like |
 | --- | --- | --- |
@@ -23,6 +43,9 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | Assault Rifle | 250 | Fast and hard-hitting, 30 rounds |
 | Marksman | 400 | Slow, huge damage, each shot pierces up to 4 zombies |
 | LMG | 800 | 100-round belt, very fast, long reload |
+| Revolver | 120 | Six heavy rounds |
+| Crossbow | 150 | Bolts skewer up to 5 zombies |
+| Flamethrower | 300 | Short-range stream that sets zombies on fire |
 
 - **Perks:** after wave 5, killed zombies have a small chance (4%, bosses always) to drop a perk. Tap it to collect it before it blinks out (about 7 seconds); it then flies to the top and activates. Timers show at the top of the battlefield and only run down during waves.
 
@@ -78,6 +101,8 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | `Halp/ContentView.swift` | SwiftUI: top bar, 2x button, upgrade panel, menus |
 | `Halp/GameModel.swift` | Waves, kills, health, upgrade costs and stats |
 | `Halp/GameScene.swift` | SpriteKit battlefield: zombies, shooting, turrets, effects |
+| `Halp/Heroes.swift` | Heroes (guns, passives, abilities), campaign regions, saved progress |
+| `Halp/MetaViews.swift` | Menu, campaign route, hero roster, region cleared, game over |
 | `Halp/PixelArt.swift` | Pixel sprites drawn from text grids (no image files needed) |
 | `Halp/Palette.swift` | Colors |
 

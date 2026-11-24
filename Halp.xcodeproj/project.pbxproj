@@ -14,6 +14,8 @@
 		381AFEB184623FD1127E4E29 /* PixelArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCF5A0D4F1EBC729871CE60F /* PixelArt.swift */; };
 		9518219909D94272CC4F38C1 /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D151486DEC14205F5CAE194 /* Palette.swift */; };
 		61143D204C27D8A3AD22D48C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 32BB636196F91ED59D7A4919 /* Assets.xcassets */; };
+		C3EAEEFEAC77C44740B7F914 /* Heroes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42E2FB3A18684A2B447ECC3A /* Heroes.swift */; };
+		B54C9832BAB5FED90DD51A02 /* MetaViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB4DCABE4AFBD89B5CAF196 /* MetaViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +27,8 @@
 		BCF5A0D4F1EBC729871CE60F /* PixelArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PixelArt.swift; sourceTree = "<group>"; };
 		2D151486DEC14205F5CAE194 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
 		32BB636196F91ED59D7A4919 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		42E2FB3A18684A2B447ECC3A /* Heroes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Heroes.swift; sourceTree = "<group>"; };
+		3BB4DCABE4AFBD89B5CAF196 /* MetaViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetaViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +67,8 @@
 				9C12B621CA327E01960B15FC /* GameScene.swift */,
 				BCF5A0D4F1EBC729871CE60F /* PixelArt.swift */,
 				2D151486DEC14205F5CAE194 /* Palette.swift */,
+				3BB4DCABE4AFBD89B5CAF196 /* MetaViews.swift */,
+				42E2FB3A18684A2B447ECC3A /* Heroes.swift */,
 				32BB636196F91ED59D7A4919 /* Assets.xcassets */,
 			);
 			path = Halp;
@@ -143,6 +149,8 @@
 				EFD40D29C2A93F87764A6B0B /* GameScene.swift in Sources */,
 				381AFEB184623FD1127E4E29 /* PixelArt.swift in Sources */,
 				9518219909D94272CC4F38C1 /* Palette.swift in Sources */,
+				B54C9832BAB5FED90DD51A02 /* MetaViews.swift in Sources */,
+				C3EAEEFEAC77C44740B7F914 /* Heroes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

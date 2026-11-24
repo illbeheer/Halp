@@ -203,6 +203,8 @@ private final class Bullet: SKSpriteNode {
     var rangeLeft: CGFloat?
     /// Zombies already hit, so a piercing bullet doesn't hit the same one twice.
     var hits = Set<ObjectIdentifier>()
+    /// Sets zombies on fire (flamethrower, Torch's passive).
+    var burns = false
 }
 
 private extension UIColor {
@@ -251,7 +253,7 @@ final class GameScene: SKScene {
     private let sky = SKSpriteNode(color: .white, size: .zero)
     private let stars = SKNode()
     private let background = SKNode()
-    private let survivor = SKSpriteNode(texture: Sprites.survivor,
+    private let survivor = SKSpriteNode(texture: Hero.rook.texture,
                                         size: PixelArt.size(Sprites.survivorRows, pixel: 4))
     private var slotNodes: [SKNode] = []
     private var slotShown: [SlotState?] = []
@@ -273,6 +275,22 @@ final class GameScene: SKScene {
     private var grainTimer: TimeInterval = 0
     private var decals: [SKNode] = []
     private var isDanger = false
+
+    // Region look and difficulty (Endless uses the defaults)
+    private var theme = RegionTheme.endless
+    private var hpMultiplier: CGFloat = 1
+    private var speedMultiplier: CGFloat = 1
+    private var extraZombies = 0
+    private var typeHeadStart = 0
+
+    // Hero ability and passive timers (wave time)
+    private var abilityLeft: TimeInterval = 0
+    private var publishedAbility = 0
+    private var overclockLeft: TimeInterval = 0
+    private var deadeyeLeft: TimeInterval = 0
+    private var firewallLeft: TimeInterval = 0
+    private var firewall: SKNode?
+    private var regenTimer: TimeInterval = 10
     private let groundShade = SKSpriteNode(color: .black, size: .zero)
     /// 0 = full day, 0.5 = dusk, 1 = full night. Eases toward `targetDarkness`.
     private var darkness: CGFloat = 0
@@ -310,7 +328,7 @@ final class GameScene: SKScene {
         sky.anchorPoint = .zero
         sky.zPosition = -20
         sky.colorBlendFactor = 1
-        sky.color = Self.daySky
+        sky.color = theme.daySky
         addChild(sky)
         stars.zPosition = -19
         stars.alpha = 0
@@ -392,18 +410,18 @@ final class GameScene: SKScene {
         background.removeAllChildren()
         guard size.width > 0 else { return }
 
-        let dirt = SKSpriteNode(color: Palette.dirt, size: CGSize(width: size.width, height: groundHeight))
+        let dirt = SKSpriteNode(color: theme.dirt, size: CGSize(width: size.width, height: groundHeight))
         dirt.anchorPoint = .zero
         background.addChild(dirt)
 
         for _ in 0..<Int(size.width / 4) {
-            let speck = SKSpriteNode(color: Palette.dirtSpeck, size: CGSize(width: 4, height: 4))
+            let speck = SKSpriteNode(color: theme.dirtSpeck, size: CGSize(width: 4, height: 4))
             speck.position = CGPoint(x: CGFloat.random(in: 0...size.width),
                                      y: CGFloat.random(in: 4...(groundHeight - 8)))
             background.addChild(speck)
         }
 
-        let grass = SKSpriteNode(color: Palette.ground, size: CGSize(width: size.width, height: 6))
+        let grass = SKSpriteNode(color: theme.grass, size: CGSize(width: size.width, height: 6))
         grass.anchorPoint = .zero
         grass.position = CGPoint(x: 0, y: groundHeight - 6)
         background.addChild(grass)
@@ -469,13 +487,13 @@ final class GameScene: SKScene {
     private func applyDarkness() {
         let d = darkness
         sky.color = d <= 0.5
-            ? Self.daySky.mixed(with: Self.duskSky, smoothstep(d / 0.5))
-            : Self.duskSky.mixed(with: Self.nightSky, smoothstep((d - 0.5) / 0.5))
+            ? theme.daySky.mixed(with: theme.duskSky, smoothstep(d / 0.5))
+            : theme.duskSky.mixed(with: theme.nightSky, smoothstep((d - 0.5) / 0.5))
         let nightAmount = smoothstep((d - 0.4) / 0.6)
         stars.alpha = nightAmount
         stars.position.y = (1 - nightAmount) * 40          // the moon rises as night falls
         fogLayer.alpha = 0.22 + 0.16 * smoothstep(d)
-        let fogColor = Palette.fogDay.mixed(with: Palette.fogNight, smoothstep(d))
+        let fogColor = theme.fogDay.mixed(with: theme.fogNight, smoothstep(d))
         for bank in fogBanks { bank.node.color = fogColor }
         vignette.alpha = 0.85 + 0.15 * smoothstep(d)
         groundShade.alpha = 0.45 * smoothstep(d)
@@ -491,7 +509,7 @@ final class GameScene: SKScene {
             let bank = SKSpriteNode(texture: EffectTextures.fog,
                                     size: CGSize(width: size.width * CGFloat.random(in: 0.8...1.3),
                                                  height: CGFloat.random(in: 110...190)))
-            bank.color = Palette.fogDay.mixed(with: Palette.fogNight, smoothstep(darkness))
+            bank.color = theme.fogDay.mixed(with: theme.fogNight, smoothstep(darkness))
             bank.colorBlendFactor = 1
             bank.position = CGPoint(x: CGFloat.random(in: 0...size.width),
                                     y: CGFloat.random(in: (groundHeight + 30)...(size.height * 0.85)))
@@ -611,6 +629,7 @@ final class GameScene: SKScene {
         waveActive = false
         toSpawn = 0
         playerCooldown = 0
+        configureForRun()
         isNight = false
         darkness = 0
         targetDarkness = 0
@@ -631,6 +650,41 @@ final class GameScene: SKScene {
         showBanner("PRESS ▶ TO START", size: 24, hold: 2.0)
     }
 
+    /// Pick up the region's look and difficulty, and the hero, for a new run.
+    private func configureForRun() {
+        let region = model?.region
+        theme = region?.theme ?? .endless
+        hpMultiplier = region?.healthMultiplier ?? 1
+        speedMultiplier = region?.speedMultiplier ?? 1
+        extraZombies = region?.extraZombies ?? 0
+        typeHeadStart = region?.typeHeadStart ?? 0
+        resetHeroTimers()
+        survivor.texture = model?.hero.texture ?? Hero.rook.texture
+        if size.width > 0 { layout() }   // redraw ground and fog in the region's colors
+    }
+
+    private func resetHeroTimers() {
+        abilityLeft = 0
+        publishedAbility = -1
+        overclockLeft = 0
+        deadeyeLeft = 0
+        firewallLeft = 0
+        firewall?.removeFromParent()
+        firewall = nil
+        regenTimer = 10
+        survivor.colorBlendFactor = 0
+        publishAbility()
+    }
+
+    /// Swap the survivor's look and gun when a different hero is chosen between waves.
+    func heroChanged() {
+        guard let model = model else { return }
+        survivor.texture = model.hero.texture
+        resetHeroTimers()
+        weaponChanged(refill: true)
+        pop(survivor)
+    }
+
     func endGame() {
         isRunning = false
         waveActive = false
@@ -646,7 +700,7 @@ final class GameScene: SKScene {
         waveActive = true
         if night != isNight { setNight(night) }
 
-        let dayCount = min(60, 5 + wave * 2)
+        let dayCount = min(70, 5 + wave * 2 + extraZombies)
         totalThisWave = night ? max(4, Int(CGFloat(dayCount) * nightLengthMultiplier)) : dayCount
         toSpawn = totalThisWave
         spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04) * (night ? 0.8 : 1)
@@ -659,6 +713,11 @@ final class GameScene: SKScene {
         waveActive = false
         let label = model?.waveLabel ?? "\(wave)"
         model?.waveCleared()
+        // Campaign: clearing the region's last day wave ends the region.
+        if !isNight, let limit = model?.regionWaves, wave >= limit {
+            model?.regionCompleted()
+            return
+        }
         showBanner("WAVE \(label) CLEARED", size: 26, hold: 1.2)
         // Dusk creeps in while you shop before a night; dawn breaks after one.
         if isNight {
@@ -774,6 +833,8 @@ final class GameScene: SKScene {
 
     /// Which zombie types can appear, and how often, by wave.
     private func randomKind() -> Zombie.Kind {
+        // Harder regions bring the nasty types in earlier.
+        let wave = self.wave + typeHeadStart
         var pool: [(Zombie.Kind, Int)] = [(.walker, 10)]
         if wave >= 2 { pool.append((.runner, isNight ? 6 : 4)) }
         if wave >= 3 { pool.append((.crawler, 3)) }
@@ -789,7 +850,8 @@ final class GameScene: SKScene {
 
     private func spawnNext() {
         let kind: Zombie.Kind
-        if !isNight && wave % 5 == 0 && toSpawn == totalThisWave {
+        let isFinalWave = !isNight && model?.regionWaves == wave
+        if !isNight && (wave % 5 == 0 || isFinalWave) && toSpawn == totalThisWave {
             kind = .boss
         } else {
             kind = randomKind()
@@ -800,13 +862,20 @@ final class GameScene: SKScene {
         }
     }
 
+    /// Zombie health multiplier right now: per wave, night boost, and the region's
+    /// exponential difficulty. Abilities scale their damage with this too.
+    private var currentHPScale: CGFloat {
+        var scale = pow(1.17, CGFloat(max(wave, 1) - 1) + (isNight ? 0.5 : 0)) * hpMultiplier
+        if isNight { scale *= nightHPMultiplier }
+        return scale
+    }
+
     private func spawnZombie(_ kind: Zombie.Kind) {
         // Health climbs every wave, and night waves get an extra boost.
         // Nights sit half a wave further along (3.5) on the health curve.
-        var hpScale = pow(1.17, CGFloat(wave - 1) + (isNight ? 0.5 : 0))
-        var speedScale = 1 + min(0.6, CGFloat(wave) * 0.02)
+        let hpScale = currentHPScale
+        var speedScale = (1 + min(0.6, CGFloat(wave) * 0.02)) * speedMultiplier
         if isNight {
-            hpScale *= nightHPMultiplier
             speedScale *= nightSpeedMultiplier
         }
         let zombie = Zombie(kind: kind, hpScale: hpScale, speedScale: speedScale)
@@ -842,7 +911,10 @@ final class GameScene: SKScene {
         }
 
         // Perk timers only run down during a wave, not while you shop between waves.
-        if waveActive { tickPerks(dt) }
+        if waveActive {
+            tickPerks(dt)
+            tickHero(dt, model: model)
+        }
 
         // Poison damage over time
         for zombie in zombies where zombie.poisonLeft > 0 {
@@ -867,7 +939,7 @@ final class GameScene: SKScene {
         for index in slotNodes.indices {
             let state = model.slots[index]
             guard state == .turret || state == .catapult else { continue }
-            slotCooldowns[index] -= dt
+            slotCooldowns[index] -= dt * (overclockLeft > 0 ? 2.5 : 1)
             guard slotCooldowns[index] <= 0, let target = closestZombies(1).first else { continue }
             let node = slotNodes[index]
             if state == .turret {
@@ -894,6 +966,169 @@ final class GameScene: SKScene {
             .sorted { $0.position.y < $1.position.y }
             .prefix(count)
             .map { $0 }
+    }
+
+    // MARK: Hero abilities and passives
+
+    private func tickHero(_ dt: TimeInterval, model: GameModel) {
+        if abilityLeft > 0 {
+            abilityLeft = max(0, abilityLeft - dt)
+            publishAbility()
+        }
+        overclockLeft = max(0, overclockLeft - dt)
+        if deadeyeLeft > 0 {
+            deadeyeLeft -= dt
+            if deadeyeLeft <= 0 { survivor.run(.colorize(withColorBlendFactor: 0, duration: 0.2)) }
+        }
+        if firewallLeft > 0 {
+            firewallLeft -= dt
+            burnFirewall(dt)
+            if firewallLeft <= 0 {
+                firewall?.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()]))
+                firewall = nil
+            }
+        }
+        // Doc's passive: slow barricade repairs during waves.
+        if model.hero.regenerates {
+            regenTimer -= dt
+            if regenTimer <= 0 {
+                regenTimer = 10
+                if model.baseHP < model.maxBaseHP {
+                    model.repairBarricade(1)
+                    popLabel("+1 HP", at: CGPoint(x: size.width / 2, y: barricadeY + 30))
+                }
+            }
+        }
+    }
+
+    private func publishAbility() {
+        let seconds = Int(abilityLeft.rounded(.up))
+        if seconds != publishedAbility {
+            publishedAbility = seconds
+            model?.abilityCooldownChanged(seconds)
+        }
+    }
+
+    /// Fire the current hero's tap ability.
+    func useAbility() {
+        guard isRunning, waveActive, abilityLeft <= 0, let model = model else { return }
+        let hero = model.hero
+        abilityLeft = hero.abilityCooldown
+        publishAbility()
+        announce(hero.abilityName.uppercased() + "!")
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        let power = currentHPScale
+
+        switch hero {
+        case .rook:
+            // Frag grenade into the nearest pack.
+            let target = closestZombies(1).first?.position ?? CGPoint(x: size.width / 2, y: size.height * 0.5)
+            lob(to: target, from: gunMuzzle) { [weak self] in
+                self?.explode(at: target, radius: 85, damage: 8 * power)
+            }
+        case .mags:
+            overclockLeft = 6
+            for node in slotNodes where !node.children.isEmpty {
+                burstSparks(at: CGPoint(x: node.position.x, y: node.position.y + 20))
+            }
+        case .doc:
+            model.repairBarricade(6)
+            popLabel("+6 HP", at: CGPoint(x: size.width / 2, y: barricadeY + 30))
+            burstSparks(at: CGPoint(x: size.width / 2, y: barricadeY + 10))
+        case .vix:
+            deadeyeLeft = 6
+            survivor.color = Palette.bloodRed
+            survivor.run(.colorize(withColorBlendFactor: 0.45, duration: 0.15))
+        case .torch:
+            startFirewall()
+        case .sarge:
+            airstrike(damage: 5 * power)
+        }
+    }
+
+    /// A grenade arc from the hero to a point, then a callback on landing.
+    private func lob(to target: CGPoint, from origin: CGPoint, landed: @escaping () -> Void) {
+        let grenade = SKSpriteNode(color: UIColor(red: 0.25, green: 0.30, blue: 0.20, alpha: 1),
+                                   size: CGSize(width: 7, height: 7))
+        grenade.position = origin
+        grenade.zPosition = 35
+        grenade.name = "fx"
+        addChild(grenade)
+        let flight: TimeInterval = 0.55
+        let move = SKAction.move(to: target, duration: flight)
+        move.timingMode = .easeOut
+        let arc = SKAction.sequence([.scale(to: 2, duration: flight / 2), .scale(to: 1, duration: flight / 2)])
+        grenade.run(.sequence([.group([move, arc, .rotate(byAngle: .pi * 4, duration: flight)]),
+                               .run(landed), .removeFromParent()]))
+    }
+
+    /// Fiery blast that damages everything in range.
+    private func explode(at point: CGPoint, radius: CGFloat, damage: CGFloat) {
+        guard isRunning else { return }
+        let blast = SKShapeNode(circleOfRadius: radius)
+        blast.position = point
+        blast.fillColor = UIColor(red: 1.0, green: 0.55, blue: 0.15, alpha: 0.45)
+        blast.strokeColor = UIColor(red: 1.0, green: 0.85, blue: 0.40, alpha: 0.9)
+        blast.lineWidth = 3
+        blast.zPosition = 36
+        blast.setScale(0.2)
+        blast.name = "fx"
+        addChild(blast)
+        blast.run(.sequence([.group([.scale(to: 1, duration: 0.15), .fadeOut(withDuration: 0.4)]), .removeFromParent()]))
+        background.run(.sequence([.moveBy(x: 5, y: 0, duration: 0.03), .moveBy(x: -10, y: 0, duration: 0.06),
+                                  .moveBy(x: 5, y: 0, duration: 0.03)]))
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+        let caught = zombies.filter { hypot($0.position.x - point.x, $0.position.y - point.y) < radius }
+        for victim in caught {
+            applyDamage(damage, to: victim, canPoison: false)
+        }
+    }
+
+    /// Sarge: a line of blasts walking down the field over the zombies.
+    private func airstrike(damage: CGFloat) {
+        var targets = zombies.filter { $0.position.y < size.height }.shuffled().prefix(6).map(\.position)
+        while targets.count < 6 {
+            targets.append(CGPoint(x: CGFloat.random(in: 30...max(31, size.width - 30)),
+                                   y: CGFloat.random(in: (barricadeY + 60)...max(barricadeY + 61, size.height * 0.85))))
+        }
+        for (index, point) in targets.enumerated() {
+            run(.sequence([.wait(forDuration: 0.3 + Double(index) * 0.15),
+                           .run { [weak self] in self?.explode(at: point, radius: 70, damage: damage) }]))
+        }
+    }
+
+    /// Torch: a band of fire across the field that burns zombies walking through it.
+    private func startFirewall() {
+        firewall?.removeFromParent()
+        let wall = SKNode()
+        wall.position = CGPoint(x: 0, y: firewallY)
+        wall.zPosition = 11
+        wall.name = "fx"
+        var x: CGFloat = 0
+        while x < size.width {
+            let flame = SKSpriteNode(color: UIColor(red: 1.0, green: CGFloat.random(in: 0.3...0.6), blue: 0.1, alpha: 0.85),
+                                     size: CGSize(width: 8, height: CGFloat.random(in: 14...30)))
+            flame.anchorPoint = CGPoint(x: 0.5, y: 0)
+            flame.position = CGPoint(x: x, y: -14)
+            let flicker = SKAction.sequence([.scaleY(to: CGFloat.random(in: 0.5...0.8), duration: 0.08),
+                                             .scaleY(to: CGFloat.random(in: 1.0...1.4), duration: 0.1)])
+            flame.run(.repeatForever(flicker))
+            wall.addChild(flame)
+            x += 8
+        }
+        addChild(wall)
+        firewall = wall
+        firewallLeft = 5
+    }
+
+    private var firewallY: CGFloat { barricadeY + (size.height - barricadeY) * 0.35 }
+
+    private func burnFirewall(_ dt: TimeInterval) {
+        let band = (firewallY - 20)...(firewallY + 20)
+        let dps = 2.5 * currentHPScale
+        for zombie in zombies where band.contains(zombie.position.y) {
+            if zombie.takeHit(dps * CGFloat(dt), flash: false) { kill(zombie) }
+        }
     }
 
     // MARK: The survivor's gun
@@ -935,9 +1170,11 @@ final class GameScene: SKScene {
         guard playerCooldown <= 0, let target = closestZombies(1).first else { return }
 
         let muzzle = gunMuzzle
+        let damage = model.gunDamage * (deadeyeLeft > 0 ? 2.5 : 1)
         for _ in 0..<gun.pellets {
-            fire(from: muzzle, at: target, damage: model.gunDamage, color: Palette.bullet,
-                 spread: gun.spread, pierce: gun.pierce, range: gun.range)
+            fire(from: muzzle, at: target, damage: damage, color: gun.bulletColor,
+                 spread: gun.spread, pierce: gun.pierce + model.hero.extraPierce, range: gun.range,
+                 burns: gun.burns || model.hero.burnsOnHit, bulletSize: gun.bulletSize)
         }
         flash(at: muzzle)
         let restY: CGFloat = 28
@@ -975,7 +1212,8 @@ final class GameScene: SKScene {
     // MARK: Shooting
 
     private func fire(from origin: CGPoint, at target: Zombie, damage: CGFloat, color: UIColor,
-                      spread: CGFloat = 0, pierce: Int = 1, range: CGFloat? = nil) {
+                      spread: CGFloat = 0, pierce: Int = 1, range: CGFloat? = nil,
+                      burns: Bool = false, bulletSize: CGSize = CGSize(width: 3, height: 9)) {
         // Lead the target slightly so shots land on walking zombies.
         let distance = hypot(target.position.x - origin.x, target.position.y - origin.y)
         let travel = distance / bulletSpeed
@@ -983,8 +1221,8 @@ final class GameScene: SKScene {
                           y: target.position.y - target.walkSpeed * CGFloat(travel))
         let dx = aim.x - origin.x, dy = aim.y - origin.y
 
-        let bullet = Bullet(color: perkActive(.poison) ? Perk.poison.color : color,
-                            size: CGSize(width: 3, height: 9))
+        let bullet = Bullet(color: perkActive(.poison) ? Perk.poison.color : color, size: bulletSize)
+        bullet.burns = burns
         bullet.position = origin
         bullet.zPosition = 25
         let angle = atan2(dy, dx) + (spread > 0 ? CGFloat.random(in: -spread / 2...spread / 2) : 0)
@@ -1017,7 +1255,7 @@ final class GameScene: SKScene {
                 $0.frame.contains(bullet.position) && !bullet.hits.contains(ObjectIdentifier($0))
             }) {
                 bullet.hits.insert(ObjectIdentifier(hit))
-                applyDamage(bullet.damage, to: hit)
+                applyDamage(bullet.damage, to: hit, burn: bullet.burns)
                 bullet.pierce -= 1
                 if bullet.pierce <= 0 { spent.append(bullet) }
             } else if bullet.position.y > size.height + 20
@@ -1032,7 +1270,7 @@ final class GameScene: SKScene {
     }
 
     /// All damage from bullets, rocks and bursts goes through here so perks apply everywhere.
-    private func applyDamage(_ amount: CGFloat, to zombie: Zombie, canPoison: Bool = true) {
+    private func applyDamage(_ amount: CGFloat, to zombie: Zombie, canPoison: Bool = true, burn: Bool = false) {
         guard zombie.parent != nil else { return }
         var damage = amount
         if perkActive(.instaKill) {
@@ -1041,6 +1279,8 @@ final class GameScene: SKScene {
         }
         if canPoison && perkActive(.poison) {
             zombie.poison(dps: amount * 0.5, duration: 3)
+        } else if burn {
+            zombie.poison(dps: amount * 0.6, duration: 2)
         }
         if zombie.takeHit(damage) {
             kill(zombie)
@@ -1200,6 +1440,12 @@ final class GameScene: SKScene {
                                         < hypot($1.position.x - point.x, $1.position.y - point.y) }),
            hypot(token.position.x - point.x, token.position.y - point.y) < 34 {
             collect(token)
+            return
+        }
+
+        // Tap the hero (between waves) to swap heroes.
+        if survivor.frame.insetBy(dx: -12, dy: -8).contains(point) {
+            model?.heroTapped()
             return
         }
 

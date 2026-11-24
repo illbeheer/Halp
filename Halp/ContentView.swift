@@ -2,14 +2,14 @@ import SwiftUI
 import SpriteKit
 
 // Gritty survival-horror look: near-black panels, blood red and bone white.
-private let panelColor = Color(red: 0.05, green: 0.05, blue: 0.06)
-private let blood = Color(red: 0.80, green: 0.08, blue: 0.06)
-private let bone = Color(red: 0.88, green: 0.85, blue: 0.78)
+let panelColor = Color(red: 0.05, green: 0.05, blue: 0.06)
+let blood = Color(red: 0.80, green: 0.08, blue: 0.06)
+let bone = Color(red: 0.88, green: 0.85, blue: 0.78)
 /// Kill-count glyph (text-style skull, not the color emoji).
-private let skull = "\u{2620}\u{FE0E}"
+let skull = "\u{2620}\u{FE0E}"
 
 /// Heavy condensed type for numbers and headings.
-private func gritty(_ size: CGFloat) -> Font {
+func gritty(_ size: CGFloat) -> Font {
     .custom("Futura-CondensedExtraBold", size: size)
 }
 
@@ -27,6 +27,11 @@ struct ContentView: View {
                         FastForwardButton(model: model)
                             .padding(.trailing, 12)
                             .padding(.bottom, 146) // just above the barricade line
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        AbilityButton(model: model)
+                            .padding(.leading, 12)
+                            .padding(.bottom, 140)
                     }
                     .overlay(alignment: .top) {
                         PerkBar(perks: model.activePerks)
@@ -49,19 +54,22 @@ struct ContentView: View {
 
             switch model.phase {
             case .menu:
-                MenuOverlay(bestWave: model.bestWave, start: model.start)
+                MenuOverlay(model: model)
+            case .map:
+                CampaignMap(model: model)
             case .playing:
                 EmptyView()
+            case .regionCleared:
+                RegionClearedOverlay(model: model)
             case .gameOver:
-                GameOverOverlay(wave: model.waveLabel,
-                                kills: model.totalKills,
-                                bestWave: model.bestWave,
-                                isNewBest: model.isNewBest,
-                                retry: model.start)
+                GameOverOverlay(model: model)
             }
         }
         .statusBarHidden(true)
         .animation(.easeOut(duration: 0.25), value: model.phase)
+        .sheet(isPresented: $model.showRoster) {
+            HeroRoster(model: model)
+        }
         .confirmationDialog(slotTitle, isPresented: slotDialogShown, titleVisibility: .visible) {
             slotButtons
         } message: {
@@ -187,6 +195,14 @@ private struct PerkBar: View {
 private struct TopBar: View {
     @ObservedObject var model: GameModel
 
+    /// "FARMLANDS · 3/8" in Campaign, "ENDLESS" otherwise.
+    private var regionCaption: String {
+        if let region = model.region, let waves = model.regionWaves {
+            return "\(region.name.uppercased()) · \(min(max(model.wave, 1), waves))/\(waves)"
+        }
+        return "ENDLESS"
+    }
+
     var body: some View {
         ZStack {
             // Day/night icon, centered on the screen.
@@ -195,6 +211,11 @@ private struct TopBar: View {
             HStack(alignment: .center) {
                 // Wave number (big and bloody), barricade health and kills (currency).
                 VStack(alignment: .leading, spacing: 2) {
+                    Text(regionCaption)
+                        .font(gritty(11))
+                        .tracking(1)
+                        .foregroundStyle(bone.opacity(0.6))
+                        .lineLimit(1)
                     WaveNumber(label: model.waveLabel, isNight: model.isNightWave && model.waveInProgress)
                     HealthBar(value: model.baseHP, max: model.maxBaseHP)
                     HStack(spacing: 4) {
@@ -325,6 +346,41 @@ private struct ControlButton: View {
     }
 }
 
+/// The hero's tap ability, bottom-left of the battlefield, with its cooldown.
+private struct AbilityButton: View {
+    @ObservedObject var model: GameModel
+
+    var body: some View {
+        let ready = model.abilityReady
+        let usable = model.canUseAbility
+        let accent = Color(model.hero.accent)
+
+        Button(action: model.useAbility) {
+            ZStack {
+                Circle()
+                    .fill(ready ? accent.opacity(0.9) : Color.black.opacity(0.6))
+                Circle()
+                    .stroke(ready ? bone : bone.opacity(0.3), lineWidth: 2)
+                if ready {
+                    Image(systemName: model.hero.abilityIcon)
+                        .font(.system(size: 20, weight: .black))
+                        .foregroundStyle(bone)
+                } else {
+                    Text("\(model.abilityCooldown)")
+                        .font(gritty(20))
+                        .foregroundStyle(bone.opacity(0.7))
+                        .monospacedDigit()
+                }
+            }
+            .frame(width: 52, height: 52)
+            .shadow(color: ready && usable ? accent : .clear, radius: 8)
+        }
+        .disabled(!usable)
+        .opacity(model.phase == .playing ? (usable || !ready ? 1 : 0.6) : 0)
+        .accessibilityLabel(ready ? "\(model.hero.abilityName), ready" : "\(model.hero.abilityName), \(model.abilityCooldown) seconds")
+    }
+}
+
 /// The ">>" 2x speed toggle, sitting just above the barricade on the right.
 private struct FastForwardButton: View {
     @ObservedObject var model: GameModel
@@ -380,6 +436,24 @@ private struct UpgradePanel: View {
         VStack(spacing: 8) {
             GunSelector(model: model)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Button {
+                    model.showRoster = true
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(model.hero.name.uppercased())
+                            .font(gritty(14))
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 10, weight: .bold))
+                    }
+                    .foregroundStyle(Color(model.hero.accent))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color(model.hero.accent), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.canSwapHero)
+                .opacity(model.canSwapHero ? 1 : 0.4)
+                .accessibilityLabel("Hero: \(model.hero.name). Change hero")
                 Text(model.equippedGun.name.uppercased())
                     .font(gritty(16))
                     .foregroundStyle(blood)
@@ -413,7 +487,7 @@ private struct GunSelector: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(Gun.allCases) { gun in
+                ForEach(model.hero.guns) { gun in
                     GunChip(gun: gun, model: model)
                 }
             }
@@ -437,13 +511,13 @@ private struct GunChip: View {
                 Text(gun.shortName.uppercased())
                     .font(gritty(13))
                     .lineLimit(1)
-                Text(owned ? (equipped ? "EQUIPPED" : "OWNED") : "\(skull) \(gun.price)")
+                Text(owned ? (equipped ? "EQUIPPED" : "OWNED") : "\(skull) \(model.price(gun))")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(owned ? bone.opacity(equipped ? 1 : 0.6)
                                            : (affordable ? blood : bone.opacity(0.35)))
             }
             .foregroundStyle(equipped ? bone : bone.opacity(owned ? 0.9 : 0.5))
-            .frame(minWidth: 64)
+            .frame(minWidth: 84)
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
             .background(
@@ -458,7 +532,7 @@ private struct GunChip: View {
         }
         .buttonStyle(.plain)
         .disabled(!owned && !affordable)
-        .accessibilityLabel(owned ? "\(gun.name)\(equipped ? ", equipped" : "")" : "Buy \(gun.name) for \(gun.price) kills")
+        .accessibilityLabel(owned ? "\(gun.name)\(equipped ? ", equipped" : "")" : "Buy \(gun.name) for \(model.price(gun)) kills")
     }
 }
 
@@ -508,135 +582,6 @@ private struct UpgradeCard: View {
         .buttonStyle(.plain)
         .disabled(!affordable)
         .opacity(model.isAvailable(upgrade) || maxed ? 1 : 0.45)
-    }
-}
-
-// MARK: - Overlays
-
-private struct MenuOverlay: View {
-    let bestWave: Double
-    let start: () -> Void
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Spacer()
-            FlickeringTitle(text: "HALP!", size: 110)
-            Text("THE DEAD DON'T STOP.\nNEITHER DO YOU.")
-                .multilineTextAlignment(.center)
-                .font(gritty(20))
-                .tracking(1.5)
-                .foregroundStyle(bone)
-            Text("Hold the barricade. Send each wave with ▶.\nBuy guns, unlock slots, build and upgrade\nturrets and catapults. Night falls after\nevery 3rd wave (3.5, 6.5…).")
-                .multilineTextAlignment(.center)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundStyle(bone.opacity(0.6))
-                .padding(.horizontal, 20)
-            if bestWave > 0 {
-                Text("BEST: WAVE \(GameModel.waveLabel(bestWave))")
-                    .font(gritty(20))
-                    .foregroundStyle(blood)
-            }
-            Spacer()
-            PulsingText("TAP TO SURVIVE")
-            Spacer().frame(height: 60)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RadialGradient(colors: [Color(red: 0.18, green: 0.02, blue: 0.02).opacity(0.85), .black.opacity(0.95)],
-                           center: .center, startRadius: 20, endRadius: 420)
-                .ignoresSafeArea()
-        )
-        .contentShape(Rectangle())
-        .onTapGesture(perform: start)
-        .transition(.opacity)
-    }
-}
-
-private struct GameOverOverlay: View {
-    let wave: String
-    let kills: Int
-    let bestWave: Double
-    let isNewBest: Bool
-    let retry: () -> Void
-
-    var body: some View {
-        VStack(spacing: 12) {
-            Spacer()
-            FlickeringTitle(text: "OVERRUN", size: 72)
-            Text("YOU HELD OUT TO WAVE")
-                .font(gritty(20))
-                .tracking(1.5)
-                .foregroundStyle(bone)
-            Text(wave)
-                .font(gritty(90))
-                .foregroundStyle(blood)
-                .shadow(color: blood.opacity(0.8), radius: 12)
-            Text("\(kills) KILLS")
-                .font(gritty(22))
-                .foregroundStyle(bone.opacity(0.8))
-            Text(isNewBest ? "NEW BEST" : "BEST: WAVE \(GameModel.waveLabel(bestWave))")
-                .font(gritty(20))
-                .foregroundStyle(isNewBest ? blood : bone.opacity(0.6))
-            Spacer()
-            PulsingText("TAP TO GO AGAIN")
-            Spacer().frame(height: 60)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RadialGradient(colors: [Color(red: 0.25, green: 0.0, blue: 0.0).opacity(0.75), .black.opacity(0.95)],
-                           center: .center, startRadius: 20, endRadius: 420)
-                .ignoresSafeArea()
-        )
-        .contentShape(Rectangle())
-        .onTapGesture(perform: retry)
-        .transition(.opacity)
-    }
-}
-
-/// Big blood-red title that flickers now and then like a dying neon sign.
-private struct FlickeringTitle: View {
-    let text: String
-    let size: CGFloat
-    @State private var on = true
-    @State private var timer: Timer?
-
-    var body: some View {
-        Text(text)
-            .font(gritty(size))
-            .foregroundStyle(blood)
-            .shadow(color: blood.opacity(on ? 0.9 : 0.1), radius: 16)
-            .shadow(color: .black, radius: 0, x: 4, y: 4)
-            .opacity(on ? 1 : 0.35)
-            .onAppear {
-                timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
-                    // Mostly on, with the occasional stutter.
-                    on = Double.random(in: 0...1) > 0.06
-                }
-            }
-            .onDisappear {
-                timer?.invalidate()
-                timer = nil
-            }
-    }
-}
-
-private struct PulsingText: View {
-    let text: String
-    @State private var dim = false
-
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text)
-            .font(gritty(24))
-            .tracking(2)
-            .foregroundStyle(bone)
-            .opacity(dim ? 0.25 : 1)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
-                    dim = true
-                }
-            }
     }
 }
 
