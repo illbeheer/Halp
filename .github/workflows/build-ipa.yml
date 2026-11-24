@@ -1,0 +1,44 @@
+name: Build IPA
+
+on:
+  push:
+    branches: [claude/ios-game-app-kwhlix, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      # Unsigned build: the IPA gets signed with your own Apple ID
+      # when you install it (for example with Sideloadly or AltStore).
+      - name: Build app
+        run: |
+          xcodebuild \
+            -project Halp.xcodeproj \
+            -target Halp \
+            -configuration Release \
+            -sdk iphoneos \
+            SYMROOT="$PWD/build" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/Release-iphoneos/Halp.app Payload/
+          zip -qry Halp.ipa Payload
+          ls -lh Halp.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Halp-ipa
+          path: Halp.ipa
+          retention-days: 30
