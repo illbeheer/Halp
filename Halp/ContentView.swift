@@ -56,29 +56,38 @@ private struct TopBar: View {
     @ObservedObject var model: GameModel
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
-            // Wave, barricade health and kills (currency).
-            VStack(alignment: .leading, spacing: 4) {
-                Text("WAVE \(max(model.wave, 1))")
-                    .font(pixelFont)
-                    .foregroundStyle(.white)
-                HealthBar(value: model.baseHP, max: model.maxBaseHP)
-                HStack(spacing: 4) {
-                    Text("🧟")
-                    Text("\(model.kills)")
-                        .font(pixelFont)
-                        .foregroundStyle(.yellow)
-                        .monospacedDigit()
-                }
-            }
-
-            Spacer()
-
+        ZStack {
+            // Day/night icon, centered on the screen.
             DayNightIndicator(isNight: model.isNight, upcoming: !model.waveInProgress)
 
-            Spacer()
+            HStack(alignment: .center) {
+                // Wave, barricade health and kills (currency).
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("WAVE \(max(model.wave, 1))")
+                        .font(pixelFont)
+                        .foregroundStyle(.white)
+                    HealthBar(value: model.baseHP, max: model.maxBaseHP)
+                    HStack(spacing: 4) {
+                        Text("🧟")
+                        Text("\(model.kills)")
+                            .font(pixelFont)
+                            .foregroundStyle(.yellow)
+                            .monospacedDigit()
+                    }
+                }
 
-            PlayButton(model: model)
+                Spacer()
+
+                // Play and pause, top right.
+                HStack(spacing: 8) {
+                    ControlButton(icon: "play.fill", tint: .green, enabled: model.canPlay,
+                                  highlight: model.canPlay, label: "Play",
+                                  action: model.playPressed)
+                    ControlButton(icon: "pause.fill", tint: .white, enabled: model.canPause,
+                                  highlight: false, label: "Pause",
+                                  action: model.pausePressed)
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -105,36 +114,40 @@ private struct DayNightIndicator: View {
     }
 }
 
-/// Starts the next wave; while a wave is running it pauses and resumes.
-private struct PlayButton: View {
-    @ObservedObject var model: GameModel
+/// A square top-bar button. `highlight` makes it glow to say "press me".
+private struct ControlButton: View {
+    let icon: String
+    let tint: Color
+    let enabled: Bool
+    let highlight: Bool
+    let label: String
+    let action: () -> Void
     @State private var glow = false
 
     var body: some View {
-        let waiting = !model.waveInProgress && model.phase == .playing
-        let icon = model.waveInProgress ? (model.isPaused ? "play.fill" : "pause.fill") : "play.fill"
-
-        Button(action: model.playPressed) {
+        Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 22, weight: .black))
-                .frame(width: 56, height: 56)
-                .foregroundStyle(waiting ? Color.black : Color.white)
+                .font(.system(size: 20, weight: .black))
+                .frame(width: 48, height: 48)
+                .foregroundStyle(highlight ? Color.black : Color.white)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(waiting ? Color.green : Color.white.opacity(0.12))
+                        .fill(highlight ? tint : Color.white.opacity(0.12))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.green, lineWidth: 2)
+                        .stroke(tint, lineWidth: 2)
                 )
-                .scaleEffect(waiting && glow ? 1.08 : 1)
+                .scaleEffect(highlight && glow ? 1.08 : 1)
         }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.35)
         .onAppear {
             withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
                 glow = true
             }
         }
-        .accessibilityLabel(waiting ? "Start next wave" : (model.isPaused ? "Resume" : "Pause"))
+        .accessibilityLabel(label)
     }
 }
 
@@ -260,7 +273,7 @@ private struct MenuOverlay: View {
                 .font(.system(size: 76, weight: .black, design: .monospaced))
                 .foregroundStyle(.white)
                 .shadow(color: .green.opacity(0.6), radius: 0, x: 4, y: 4)
-            Text("Hold the barricade.\nPress ▶ to send each wave.\nNights bring tougher zombies.")
+            Text("Hold the barricade.\nPress ▶ to send each wave.\nEvery 3rd wave is a short,\nbrutal night.")
                 .multilineTextAlignment(.center)
                 .font(.system(size: 15, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.8))

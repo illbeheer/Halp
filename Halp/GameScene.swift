@@ -181,6 +181,8 @@ final class GameScene: SKScene {
     /// Night zombies are tougher and a little faster.
     private let nightHPMultiplier: CGFloat = 1.6
     private let nightSpeedMultiplier: CGFloat = 1.1
+    /// Nights are considerably shorter than days: this fraction of a day wave's zombies.
+    private let nightLengthMultiplier: CGFloat = 0.5
     /// Turret spots (fraction of width, height above bottom), filled in this order:
     /// upper-left, upper-right, lower-left, lower-right.
     private let turretSlots: [(x: CGFloat, y: CGFloat)] = [(0.20, 62), (0.80, 62), (0.33, 8), (0.80, 8)]
@@ -364,9 +366,10 @@ final class GameScene: SKScene {
         let night = GameModel.isNight(wave: wave)
         if night != isNight { setNight(night) }
 
-        totalThisWave = min(60, 5 + wave * 2)
+        let dayCount = min(60, 5 + wave * 2)
+        totalThisWave = night ? max(4, Int(CGFloat(dayCount) * nightLengthMultiplier)) : dayCount
         toSpawn = totalThisWave
-        spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04)
+        spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04) * (night ? 0.8 : 1)
         spawnTimer = 0.6
         model?.waveStarted(wave)
         showBanner(night ? "NIGHT \(wave)" : "DAY \(wave)", size: 40, hold: 1.0)

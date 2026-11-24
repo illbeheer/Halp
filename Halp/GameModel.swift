@@ -61,9 +61,11 @@ final class GameModel: ObservableObject {
         didSet { scene.speed = isFastForward ? 2 : 1 }
     }
 
-    /// Day and night alternate: odd waves are day, even waves are night.
-    /// Night zombies get extra health (see GameScene.nightHPMultiplier).
-    static func isNight(wave: Int) -> Bool { wave % 2 == 0 }
+    /// Every 3rd wave is a night: waves 3, 6, 9... Nights are short but brutal:
+    /// fewer zombies (GameScene.nightLengthMultiplier) with extra health
+    /// (GameScene.nightHPMultiplier).
+    static let nightEvery = 3
+    static func isNight(wave: Int) -> Bool { wave > 0 && wave % nightEvery == 0 }
 
     /// The phase shown at the top: the current wave while it's running, otherwise the next one.
     var isNight: Bool { Self.isNight(wave: waveInProgress ? wave : wave + 1) }
@@ -94,16 +96,24 @@ final class GameModel: ObservableObject {
         scene.startGame()
     }
 
-    /// The Play button: starts the next wave, or pauses/resumes the current one.
+    /// Play: starts the next wave, or resumes if paused.
     func playPressed() {
         guard phase == .playing else { return }
-        if waveInProgress {
-            isPaused.toggle()
-        } else {
+        if isPaused {
             isPaused = false
+        } else if !waveInProgress {
             scene.startNextWave()
         }
     }
+
+    /// Pause: freezes the current wave.
+    func pausePressed() {
+        guard phase == .playing, waveInProgress else { return }
+        isPaused = true
+    }
+
+    var canPlay: Bool { phase == .playing && (isPaused || !waveInProgress) }
+    var canPause: Bool { phase == .playing && waveInProgress && !isPaused }
 
     // MARK: Upgrades
 

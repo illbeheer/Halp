@@ -6,11 +6,11 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 
 ## How it plays
 
-- **Top bar:** wave, barricade health and kills (your currency) on the left. A **sun/moon** in the middle shows whether it's day or night. On the right, the **Play** button sends the next wave; during a wave it pauses and resumes.
+- **Top bar:** wave, barricade health and kills (your currency) on the left. A **sun/moon** in the top middle shows whether it's day or night. **Play** and **Pause** are top right: Play sends the next wave (or resumes), Pause freezes the current one.
 - **Battlefield:** zombies walk down toward the barricade. Every one that reaches it damages the barricade. At 0 HP you're overrun.
 - **>> button:** just above the barricade on the right, toggles 2x speed.
 - **Defense line:** the survivor stands in the middle, with 4 turret spots in two rows, two on each side.
-- **Day and night:** waves alternate day (odd) and night (even). Zombie health rises every wave, and night zombies get +60% health and +10% speed on top of that.
+- **Day and night:** every 3rd wave (3, 6, 9…) is a night. Nights are much shorter (half the zombies, spawning faster) but zombies get +60% health and +10% speed on top of the normal per-wave health increase.
 - **Zombie types:**
 
 | Zombie | From wave | Notes |
