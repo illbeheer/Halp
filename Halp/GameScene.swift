@@ -398,10 +398,11 @@ final class GameScene: SKScene {
 
     /// Called when the player presses Play between waves.
     func startNextWave() {
-        guard isRunning, !waveActive else { return }
-        wave += 1
+        guard isRunning, !waveActive, let model = model else { return }
+        // A night is a half-wave (e.g. 3.5) that keeps the day's number; otherwise move to the next day.
+        let night = model.nextIsNight
+        if !night { wave += 1 }
         waveActive = true
-        let night = GameModel.isNight(wave: wave)
         if night != isNight { setNight(night) }
 
         let dayCount = min(60, 5 + wave * 2)
@@ -409,14 +410,15 @@ final class GameScene: SKScene {
         toSpawn = totalThisWave
         spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04) * (night ? 0.8 : 1)
         spawnTimer = 0.6
-        model?.waveStarted(wave)
-        showBanner(night ? "NIGHT \(wave)" : "DAY \(wave)", size: 40, hold: 1.0)
+        model.waveStarted(wave, night: night)
+        showBanner(night ? "NIGHT \(model.waveLabel)" : "DAY \(model.waveLabel)", size: 40, hold: 1.0)
     }
 
     private func waveCleared() {
         waveActive = false
+        let label = model?.waveLabel ?? "\(wave)"
         model?.waveCleared()
-        showBanner("WAVE \(wave) CLEARED", size: 26, hold: 1.2)
+        showBanner("WAVE \(label) CLEARED", size: 26, hold: 1.2)
     }
 
     /// Redraw each slot to match the model: padlock, empty pad, turret or catapult.
@@ -503,7 +505,7 @@ final class GameScene: SKScene {
 
     private func spawnNext() {
         let kind: Zombie.Kind
-        if wave % 5 == 0 && toSpawn == totalThisWave {
+        if !isNight && wave % 5 == 0 && toSpawn == totalThisWave {
             kind = .boss
         } else {
             kind = randomKind()
@@ -516,7 +518,8 @@ final class GameScene: SKScene {
 
     private func spawnZombie(_ kind: Zombie.Kind) {
         // Health climbs every wave, and night waves get an extra boost.
-        var hpScale = pow(1.17, CGFloat(wave - 1))
+        // Nights sit half a wave further along (3.5) on the health curve.
+        var hpScale = pow(1.17, CGFloat(wave - 1) + (isNight ? 0.5 : 0))
         var speedScale = 1 + min(0.6, CGFloat(wave) * 0.02)
         if isNight {
             hpScale *= nightHPMultiplier

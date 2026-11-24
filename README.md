@@ -20,7 +20,7 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | 💀 Insta-Kill | 8s | Every hit kills a normal zombie; bosses take +30% damage instead |
 | 🧪 Poison Bullets | 15s | Bullets also poison: extra damage over 3s |
 
-- **Day and night:** every 3rd wave (3, 6, 9…) is a night. Nights are much shorter (half the zombies, spawning faster) but zombies get +60% health and +10% speed on top of the normal per-wave health increase.
+- **Day and night:** nights are half-waves that come after every 3rd day wave: 1, 2, 3, **3.5**, 4, 5, 6, **6.5**, 7… Nights are much shorter (half the zombies, spawning faster), but zombies get +60% health and +10% speed, on top of health that rises every wave. Boss waves and free slot unlocks only happen on day waves.
 - **Zombie types:**
 
 | Zombie | From wave | Notes |

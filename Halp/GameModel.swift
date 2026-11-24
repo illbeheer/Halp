@@ -123,7 +123,10 @@ final class GameModel: ObservableObject {
     @Published private(set) var levels: [Upgrade: Int] = [:]
     @Published private(set) var slots: [SlotState] = GameModel.freshSlots()
     @Published private(set) var activePerks: [Perk: Int] = [:]  // seconds left, for the HUD
-    @Published private(set) var bestWave: Int
+    /// Best wave reached; nights count as half-waves (e.g. 3.5).
+    @Published private(set) var bestWave: Double
+    /// True while (or after) playing a night half-wave.
+    @Published private(set) var isNightWave = false
     @Published private(set) var isNewBest = false
     @Published private(set) var waveInProgress = false
     @Published var selectedSlot: Int?
@@ -132,14 +135,28 @@ final class GameModel: ObservableObject {
         didSet { scene.speed = isFastForward ? 2 : 1 }
     }
 
-    /// Every 3rd wave is a night: waves 3, 6, 9... Nights are short but brutal:
-    /// fewer zombies (GameScene.nightLengthMultiplier) with extra health
-    /// (GameScene.nightHPMultiplier).
+    /// Nights are half-waves that come after every 3rd day wave:
+    /// 1, 2, 3, 3.5 (night), 4, 5, 6, 6.5 (night), 7...
+    /// They're short but brutal: fewer zombies (GameScene.nightLengthMultiplier)
+    /// with extra health (GameScene.nightHPMultiplier).
     static let nightEvery = 3
-    static func isNight(wave: Int) -> Bool { wave > 0 && wave % nightEvery == 0 }
+
+    /// Whether the next wave the Play button sends is a night.
+    var nextIsNight: Bool { wave > 0 && !isNightWave && wave % Self.nightEvery == 0 }
 
     /// The phase shown at the top: the current wave while it's running, otherwise the next one.
-    var isNight: Bool { Self.isNight(wave: waveInProgress ? wave : wave + 1) }
+    var isNight: Bool { waveInProgress ? isNightWave : nextIsNight }
+
+    /// Progress as a number: 3 for day wave 3, 3.5 for the night after it.
+    var progress: Double { Double(wave) + (isNightWave ? 0.5 : 0) }
+
+    /// "3" or "3.5".
+    static func waveLabel(_ progress: Double) -> String {
+        progress.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(progress))" : String(format: "%.1f", progress)
+    }
+
+    /// Label for the top bar: the current (or last) wave.
+    var waveLabel: String { wave == 0 ? "1" : Self.waveLabel(progress) }
 
     let scene: GameScene
     private static let bestWaveKey = "halp.bestWave"
@@ -149,7 +166,7 @@ final class GameModel: ObservableObject {
     }
 
     init() {
-        bestWave = UserDefaults.standard.integer(forKey: Self.bestWaveKey)
+        bestWave = UserDefaults.standard.double(forKey: Self.bestWaveKey)
         scene = GameScene(size: CGSize(width: 390, height: 600))
         scene.scaleMode = .resizeFill
         scene.model = self
@@ -167,6 +184,7 @@ final class GameModel: ObservableObject {
         activePerks = [:]
         selectedSlot = nil
         isNewBest = false
+        isNightWave = false
         isFastForward = false
         isPaused = false
         waveInProgress = false
@@ -330,15 +348,16 @@ final class GameModel: ObservableObject {
 
     // MARK: Events from the scene
 
-    func waveStarted(_ number: Int) {
+    func waveStarted(_ number: Int, night: Bool) {
         wave = number
+        isNightWave = night
         waveInProgress = true
     }
 
     func waveCleared() {
         waveInProgress = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
-        if wave % Self.freeUnlockEvery == 0 {
+        if !isNightWave && wave % Self.freeUnlockEvery == 0 {
             unlockNextForFree()
         }
     }
@@ -358,10 +377,10 @@ final class GameModel: ObservableObject {
         baseHP = max(0, baseHP - damage)
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
         if baseHP == 0 {
-            if wave > bestWave {
-                bestWave = wave
+            if progress > bestWave {
+                bestWave = progress
                 isNewBest = true
-                UserDefaults.standard.set(wave, forKey: Self.bestWaveKey)
+                UserDefaults.standard.set(progress, forKey: Self.bestWaveKey)
             }
             scene.endGame()
             waveInProgress = false

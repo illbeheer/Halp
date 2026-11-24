@@ -43,7 +43,7 @@ struct ContentView: View {
             case .playing:
                 EmptyView()
             case .gameOver:
-                GameOverOverlay(wave: model.wave,
+                GameOverOverlay(wave: model.waveLabel,
                                 kills: model.totalKills,
                                 bestWave: model.bestWave,
                                 isNewBest: model.isNewBest,
@@ -161,7 +161,7 @@ private struct TopBar: View {
             HStack(alignment: .center) {
                 // Wave, barricade health and kills (currency).
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("WAVE \(max(model.wave, 1))")
+                    Text("WAVE \(model.waveLabel)")
                         .font(pixelFont)
                         .foregroundStyle(.white)
                     HealthBar(value: model.baseHP, max: model.maxBaseHP)
@@ -361,7 +361,7 @@ private struct UpgradeCard: View {
 // MARK: - Overlays
 
 private struct MenuOverlay: View {
-    let bestWave: Int
+    let bestWave: Double
     let start: () -> Void
 
     var body: some View {
@@ -371,12 +371,12 @@ private struct MenuOverlay: View {
                 .font(.system(size: 76, weight: .black, design: .monospaced))
                 .foregroundStyle(.white)
                 .shadow(color: .green.opacity(0.6), radius: 0, x: 4, y: 4)
-            Text("Hold the barricade.\nPress ▶ to send each wave.\nTap a slot to build turrets\nand catapults. Every 3rd wave\nis a short, brutal night.")
+            Text("Hold the barricade.\nPress ▶ to send each wave.\nTap a slot to build turrets\nand catapults. After every 3rd\nwave comes a short, brutal\nnight: wave 3.5, 6.5...")
                 .multilineTextAlignment(.center)
                 .font(.system(size: 15, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.8))
             if bestWave > 0 {
-                Text("Best: wave \(bestWave)")
+                Text("Best: wave \(GameModel.waveLabel(bestWave))")
                     .font(pixelFont)
                     .foregroundStyle(.yellow)
             }
@@ -393,9 +393,9 @@ private struct MenuOverlay: View {
 }
 
 private struct GameOverOverlay: View {
-    let wave: Int
+    let wave: String
     let kills: Int
-    let bestWave: Int
+    let bestWave: Double
     let isNewBest: Bool
     let retry: () -> Void
 
@@ -411,7 +411,7 @@ private struct GameOverOverlay: View {
             Text("\(kills) zombies killed")
                 .font(pixelFont)
                 .foregroundStyle(.white.opacity(0.8))
-            Text(isNewBest ? "NEW BEST!" : "Best: wave \(bestWave)")
+            Text(isNewBest ? "NEW BEST!" : "Best: wave \(GameModel.waveLabel(bestWave))")
                 .font(pixelFont)
                 .foregroundStyle(.yellow)
             Spacer()
