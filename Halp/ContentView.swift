@@ -1,8 +1,17 @@
 import SwiftUI
 import SpriteKit
 
-private let panelColor = Color(red: 0.13, green: 0.12, blue: 0.16)
-private let pixelFont = Font.system(size: 15, weight: .heavy, design: .monospaced)
+// Gritty survival-horror look: near-black panels, blood red and bone white.
+private let panelColor = Color(red: 0.05, green: 0.05, blue: 0.06)
+private let blood = Color(red: 0.80, green: 0.08, blue: 0.06)
+private let bone = Color(red: 0.88, green: 0.85, blue: 0.78)
+/// Kill-count glyph (text-style skull, not the color emoji).
+private let skull = "\u{2620}\u{FE0E}"
+
+/// Heavy condensed type for numbers and headings.
+private func gritty(_ size: CGFloat) -> Font {
+    .custom("Futura-CondensedExtraBold", size: size)
+}
 
 struct ContentView: View {
     @StateObject private var model = GameModel()
@@ -27,8 +36,9 @@ struct ContentView: View {
                     .overlay {
                         if model.isPaused {
                             Text("PAUSED")
-                                .font(.system(size: 36, weight: .black, design: .monospaced))
-                                .foregroundStyle(.white)
+                                .font(gritty(48))
+                                .tracking(4)
+                                .foregroundStyle(bone)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .background(Color.black.opacity(0.45))
                                 .allowsHitTesting(false)
@@ -75,16 +85,16 @@ struct ContentView: View {
         if let index = model.selectedSlot {
             if model.slots[index] == .locked {
                 if index == model.nextLockedSlot, let cost = model.unlockCost, model.kills >= cost {
-                    Button("Unlock for 🧟 \(cost)") { model.unlockSlot(index) }
+                    Button("Unlock for \(skull) \(cost)") { model.unlockSlot(index) }
                 }
             } else if model.slots[index] == .empty {
                 let turretCost = model.buildCost(.turret)
                 let catapultCost = model.buildCost(.catapult)
                 if model.kills >= turretCost {
-                    Button("Turret – 🧟 \(turretCost)") { model.build(.turret, at: index) }
+                    Button("Turret – \(skull) \(turretCost)") { model.build(.turret, at: index) }
                 }
                 if model.kills >= catapultCost {
-                    Button("Catapult – 🧟 \(catapultCost)") { model.build(.catapult, at: index) }
+                    Button("Catapult – \(skull) \(catapultCost)") { model.build(.catapult, at: index) }
                 }
             }
         }
@@ -98,19 +108,19 @@ struct ContentView: View {
             guard index == model.nextLockedSlot, let cost = model.unlockCost else {
                 return "Slots unlock in order. Unlock the brighter padlock first."
             }
-            var text = "Unlock now for 🧟 \(cost)"
+            var text = "Unlock now for \(skull) \(cost)"
             if let freeWave = model.nextFreeUnlockWave {
                 text += ", or wait: it unlocks free after wave \(freeWave)."
             }
             if model.kills < cost {
-                text += "\n\nYou have 🧟 \(model.kills)."
+                text += "\n\nYou have \(skull) \(model.kills)."
             }
             return text
         case .empty:
-            var text = "Turret (🧟 \(model.buildCost(.turret))): fast shots at one zombie.\n"
-                + "Catapult (🧟 \(model.buildCost(.catapult))): slow, lobs rocks that hit a whole group."
+            var text = "Turret (\(skull) \(model.buildCost(.turret))): fast shots at one zombie.\n"
+                + "Catapult (\(skull) \(model.buildCost(.catapult))): slow, lobs rocks that hit a whole group."
             if model.kills < min(model.buildCost(.turret), model.buildCost(.catapult)) {
-                text += "\n\nYou have 🧟 \(model.kills). Kill more zombies!"
+                text += "\n\nYou have \(skull) \(model.kills). Kill more zombies!"
             }
             return text
         case .turret, .catapult:
@@ -131,15 +141,16 @@ private struct PerkBar: View {
                 if let secondsLeft = perks[perk] {
                     HStack(spacing: 4) {
                         Text(perk.emoji)
-                        Text("\(secondsLeft)s")
-                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        Text("\(secondsLeft)")
+                            .font(gritty(16))
                             .monospacedDigit()
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(bone)
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.black.opacity(0.6)))
-                    .overlay(Capsule().stroke(Color(perk.color), lineWidth: 2))
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(Color.black.opacity(0.7)))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(Color(perk.color), lineWidth: 2))
+                    .shadow(color: Color(perk.color).opacity(0.7), radius: 6)
                     .accessibilityLabel("\(perk.title), \(secondsLeft) seconds left")
                 }
             }
@@ -159,17 +170,16 @@ private struct TopBar: View {
             DayNightIndicator(isNight: model.isNight, upcoming: !model.waveInProgress)
 
             HStack(alignment: .center) {
-                // Wave, barricade health and kills (currency).
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("WAVE \(model.waveLabel)")
-                        .font(pixelFont)
-                        .foregroundStyle(.white)
+                // Wave number (big and bloody), barricade health and kills (currency).
+                VStack(alignment: .leading, spacing: 2) {
+                    WaveNumber(label: model.waveLabel, isNight: model.isNightWave && model.waveInProgress)
                     HealthBar(value: model.baseHP, max: model.maxBaseHP)
                     HStack(spacing: 4) {
-                        Text("🧟")
+                        Text(skull)
+                            .foregroundStyle(blood)
                         Text("\(model.kills)")
-                            .font(pixelFont)
-                            .foregroundStyle(.yellow)
+                            .font(gritty(17))
+                            .foregroundStyle(bone)
                             .monospacedDigit()
                     }
                 }
@@ -178,41 +188,73 @@ private struct TopBar: View {
 
                 // Play and pause, top right.
                 HStack(spacing: 8) {
-                    ControlButton(icon: "play.fill", tint: .green, enabled: model.canPlay,
+                    ControlButton(icon: "play.fill", tint: blood, enabled: model.canPlay,
                                   highlight: model.canPlay, label: "Play",
                                   action: model.playPressed)
-                    ControlButton(icon: "pause.fill", tint: .white, enabled: model.canPause,
+                    ControlButton(icon: "pause.fill", tint: bone, enabled: model.canPause,
                                   highlight: false, label: "Pause",
                                   action: model.pausePressed)
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(panelColor)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(blood.opacity(0.6)).frame(height: 2)
+        }
     }
 }
 
-/// Moon or sun, as in the sketch. Between waves it previews the next phase.
+/// The wave number in blood red. It flickers like a failing light when it changes.
+private struct WaveNumber: View {
+    let label: String
+    let isNight: Bool
+    @State private var flicker = 1.0
+
+    var body: some View {
+        Text(label)
+            .font(gritty(38))
+            .foregroundStyle(blood)
+            .shadow(color: blood.opacity(0.8), radius: isNight ? 10 : 4)
+            .shadow(color: .black, radius: 0, x: 2, y: 2)
+            .opacity(flicker)
+            .onChange(of: label) { _ in runFlicker() }
+            .accessibilityLabel("Wave \(label)")
+    }
+
+    private func runFlicker() {
+        let steps: [(Double, Double)] = [(0.15, 0.05), (1, 0.08), (0.3, 0.06), (1, 0.12), (0.5, 0.05), (1, 0.1)]
+        var delay = 0.0
+        for (opacity, duration) in steps {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { flicker = opacity }
+            delay += duration
+        }
+    }
+}
+
+/// Sun, or a blood moon at night. Between waves it previews the next phase.
 private struct DayNightIndicator: View {
     let isNight: Bool
     let upcoming: Bool
 
     var body: some View {
-        VStack(spacing: 2) {
-            Image(systemName: isNight ? "moon.fill" : "sun.max.fill")
-                .font(.system(size: 34, weight: .bold))
-                .foregroundStyle(isNight ? Color(red: 0.85, green: 0.85, blue: 1.0) : Color.orange)
-            Text(upcoming ? (isNight ? "NEXT: NIGHT" : "NEXT: DAY") : (isNight ? "NIGHT" : "DAY"))
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.8))
+        VStack(spacing: 1) {
+            Image(systemName: isNight ? "moon.fill" : "sun.haze.fill")
+                .font(.system(size: 32, weight: .bold))
+                .foregroundStyle(isNight ? blood : Color(red: 0.80, green: 0.62, blue: 0.35))
+                .shadow(color: isNight ? blood : .clear, radius: 8)
+            Text(upcoming ? (isNight ? "NIGHT FALLS" : "NEXT: DAY") : (isNight ? "NIGHT" : "DAY"))
+                .font(gritty(12))
+                .tracking(1)
+                .foregroundStyle(bone.opacity(0.8))
         }
         .animation(.easeInOut(duration: 0.3), value: isNight)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// A square top-bar button. `highlight` makes it glow to say "press me".
+/// A square top-bar button. `highlight` makes it throb to say "press me".
 private struct ControlButton: View {
     let icon: String
     let tint: Color
@@ -227,21 +269,21 @@ private struct ControlButton: View {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .black))
                 .frame(width: 48, height: 48)
-                .foregroundStyle(highlight ? Color.black : Color.white)
+                .foregroundStyle(highlight ? Color.black : bone)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(highlight ? tint : Color.white.opacity(0.12))
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(highlight ? tint : Color.white.opacity(0.06))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 4)
                         .stroke(tint, lineWidth: 2)
                 )
-                .scaleEffect(highlight && glow ? 1.08 : 1)
+                .shadow(color: highlight ? tint.opacity(glow ? 0.9 : 0.3) : .clear, radius: 8)
         }
         .disabled(!enabled)
-        .opacity(enabled ? 1 : 0.35)
+        .opacity(enabled ? 1 : 0.3)
         .onAppear {
-            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
                 glow = true
             }
         }
@@ -260,14 +302,14 @@ private struct FastForwardButton: View {
             Image(systemName: "forward.fill")
                 .font(.system(size: 20, weight: .black))
                 .frame(width: 52, height: 40)
-                .foregroundStyle(model.isFastForward ? Color.black : Color.white)
+                .foregroundStyle(model.isFastForward ? Color.black : bone)
                 .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(model.isFastForward ? Color.yellow : Color.black.opacity(0.45))
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(model.isFastForward ? bone : Color.black.opacity(0.55))
                 )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.yellow, lineWidth: 2)
+                    RoundedRectangle(cornerRadius: 4)
+                        .stroke(bone.opacity(0.8), lineWidth: 2)
                 )
         }
         .accessibilityLabel(model.isFastForward ? "Normal speed" : "Double speed")
@@ -281,13 +323,13 @@ private struct HealthBar: View {
     var body: some View {
         let fraction = CGFloat(value) / CGFloat(Swift.max(max, 1))
         ZStack(alignment: .leading) {
-            Rectangle().fill(Color.white.opacity(0.15))
+            Rectangle().fill(Color.white.opacity(0.08))
             Rectangle()
-                .fill(fraction > 0.3 ? Color.green : Color.red)
+                .fill(fraction > 0.3 ? bone.opacity(0.85) : blood)
                 .frame(width: 110 * fraction)
         }
-        .frame(width: 110, height: 10)
-        .overlay(Rectangle().stroke(Color.white.opacity(0.5), lineWidth: 1))
+        .frame(width: 110, height: 8)
+        .overlay(Rectangle().stroke(Color.white.opacity(0.35), lineWidth: 1))
         .animation(.easeOut(duration: 0.2), value: value)
         .accessibilityLabel("Barricade health \(value) of \(max)")
     }
@@ -310,6 +352,9 @@ private struct UpgradePanel: View {
         .padding(.top, 10)
         .padding(.bottom, 6)
         .background(panelColor)
+        .overlay(alignment: .top) {
+            Rectangle().fill(blood.opacity(0.6)).frame(height: 2)
+        }
     }
 }
 
@@ -324,37 +369,37 @@ private struct UpgradeCard: View {
         Button {
             model.buy(upgrade)
         } label: {
-            VStack(spacing: 3) {
+            VStack(spacing: 2) {
                 HStack(spacing: 4) {
                     Image(systemName: upgrade.icon)
-                        .font(.system(size: 12, weight: .bold))
-                    Text(upgrade.title)
-                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 11, weight: .bold))
+                    Text(upgrade.title.uppercased())
+                        .font(gritty(14))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
                 Text(model.detail(upgrade))
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.7))
-                Text(maxed ? "MAX" : "🧟 \(model.cost(upgrade))")
-                    .font(.system(size: 13, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(maxed ? Color.white.opacity(0.6) : (affordable ? Color.yellow : Color.red.opacity(0.8)))
+                    .foregroundStyle(bone.opacity(0.6))
+                Text(maxed ? "MAX" : "\(skull) \(model.cost(upgrade))")
+                    .font(gritty(16))
+                    .foregroundStyle(maxed ? bone.opacity(0.5) : (affordable ? blood : bone.opacity(0.35)))
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(bone)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 8)
+            .padding(.vertical, 7)
             .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(affordable ? Color(red: 0.22, green: 0.30, blue: 0.20) : Color.white.opacity(0.06))
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(affordable ? Color(red: 0.16, green: 0.05, blue: 0.05) : Color.white.opacity(0.04))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(affordable ? Color.green.opacity(0.8) : Color.white.opacity(0.15), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 3)
+                    .stroke(affordable ? blood : Color.white.opacity(0.12), lineWidth: affordable ? 2 : 1)
             )
         }
         .buttonStyle(.plain)
         .disabled(!affordable)
-        .opacity(model.isAvailable(upgrade) || maxed ? 1 : 0.5)
+        .opacity(model.isAvailable(upgrade) || maxed ? 1 : 0.45)
     }
 }
 
@@ -367,25 +412,32 @@ private struct MenuOverlay: View {
     var body: some View {
         VStack(spacing: 18) {
             Spacer()
-            Text("HALP!")
-                .font(.system(size: 76, weight: .black, design: .monospaced))
-                .foregroundStyle(.white)
-                .shadow(color: .green.opacity(0.6), radius: 0, x: 4, y: 4)
-            Text("Hold the barricade.\nPress ▶ to send each wave.\nTap a slot to build turrets\nand catapults. After every 3rd\nwave comes a short, brutal\nnight: wave 3.5, 6.5...")
+            FlickeringTitle(text: "HALP!", size: 110)
+            Text("THE DEAD DON'T STOP.\nNEITHER DO YOU.")
                 .multilineTextAlignment(.center)
-                .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.8))
+                .font(gritty(20))
+                .tracking(1.5)
+                .foregroundStyle(bone)
+            Text("Hold the barricade. Send each wave with ▶.\nTap a slot to build turrets and catapults.\nAfter every 3rd wave, night falls (3.5, 6.5…).")
+                .multilineTextAlignment(.center)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundStyle(bone.opacity(0.6))
+                .padding(.horizontal, 20)
             if bestWave > 0 {
-                Text("Best: wave \(GameModel.waveLabel(bestWave))")
-                    .font(pixelFont)
-                    .foregroundStyle(.yellow)
+                Text("BEST: WAVE \(GameModel.waveLabel(bestWave))")
+                    .font(gritty(20))
+                    .foregroundStyle(blood)
             }
             Spacer()
-            PulsingText("TAP TO START")
+            PulsingText("TAP TO SURVIVE")
             Spacer().frame(height: 60)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.75).ignoresSafeArea())
+        .background(
+            RadialGradient(colors: [Color(red: 0.18, green: 0.02, blue: 0.02).opacity(0.85), .black.opacity(0.95)],
+                           center: .center, startRadius: 20, endRadius: 420)
+                .ignoresSafeArea()
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: start)
         .transition(.opacity)
@@ -400,29 +452,63 @@ private struct GameOverOverlay: View {
     let retry: () -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             Spacer()
-            Text("OVERRUN!")
-                .font(.system(size: 52, weight: .black, design: .monospaced))
-                .foregroundStyle(.red)
-            Text("Reached wave \(wave)")
-                .font(.system(size: 22, weight: .heavy, design: .monospaced))
-                .foregroundStyle(.white)
-            Text("\(kills) zombies killed")
-                .font(pixelFont)
-                .foregroundStyle(.white.opacity(0.8))
-            Text(isNewBest ? "NEW BEST!" : "Best: wave \(GameModel.waveLabel(bestWave))")
-                .font(pixelFont)
-                .foregroundStyle(.yellow)
+            FlickeringTitle(text: "OVERRUN", size: 72)
+            Text("YOU HELD OUT TO WAVE")
+                .font(gritty(20))
+                .tracking(1.5)
+                .foregroundStyle(bone)
+            Text(wave)
+                .font(gritty(90))
+                .foregroundStyle(blood)
+                .shadow(color: blood.opacity(0.8), radius: 12)
+            Text("\(kills) KILLS")
+                .font(gritty(22))
+                .foregroundStyle(bone.opacity(0.8))
+            Text(isNewBest ? "NEW BEST" : "BEST: WAVE \(GameModel.waveLabel(bestWave))")
+                .font(gritty(20))
+                .foregroundStyle(isNewBest ? blood : bone.opacity(0.6))
             Spacer()
-            PulsingText("TAP TO TRY AGAIN")
+            PulsingText("TAP TO GO AGAIN")
             Spacer().frame(height: 60)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.75).ignoresSafeArea())
+        .background(
+            RadialGradient(colors: [Color(red: 0.25, green: 0.0, blue: 0.0).opacity(0.75), .black.opacity(0.95)],
+                           center: .center, startRadius: 20, endRadius: 420)
+                .ignoresSafeArea()
+        )
         .contentShape(Rectangle())
         .onTapGesture(perform: retry)
         .transition(.opacity)
+    }
+}
+
+/// Big blood-red title that flickers now and then like a dying neon sign.
+private struct FlickeringTitle: View {
+    let text: String
+    let size: CGFloat
+    @State private var on = true
+    @State private var timer: Timer?
+
+    var body: some View {
+        Text(text)
+            .font(gritty(size))
+            .foregroundStyle(blood)
+            .shadow(color: blood.opacity(on ? 0.9 : 0.1), radius: 16)
+            .shadow(color: .black, radius: 0, x: 4, y: 4)
+            .opacity(on ? 1 : 0.35)
+            .onAppear {
+                timer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+                    // Mostly on, with the occasional stutter.
+                    on = Double.random(in: 0...1) > 0.06
+                }
+            }
+            .onDisappear {
+                timer?.invalidate()
+                timer = nil
+            }
     }
 }
 
@@ -434,11 +520,12 @@ private struct PulsingText: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 20, weight: .heavy, design: .monospaced))
-            .foregroundStyle(.white)
-            .opacity(dim ? 0.3 : 1)
+            .font(gritty(24))
+            .tracking(2)
+            .foregroundStyle(bone)
+            .opacity(dim ? 0.25 : 1)
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                     dim = true
                 }
             }

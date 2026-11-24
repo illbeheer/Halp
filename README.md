@@ -1,6 +1,6 @@
 # Halp!
 
-An endless zombie wave defense game for iPhone, built with SwiftUI and SpriteKit.
+An endless zombie wave defense game for iPhone, built with SwiftUI and SpriteKit, with a gritty survival-horror mood: ashen daylight, blood-moon nights, drifting fog, film grain, and a flickering blood-red wave counter.
 
 A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zombies pour down from the top. The survivor shoots automatically; you spend **kills** on upgrades to keep up.
 

@@ -235,6 +235,16 @@ final class GameScene: SKScene {
     private var zombies: [Zombie] = []
     private var bullets: [Bullet] = []
 
+    // Atmosphere
+    private let fogLayer = SKNode()
+    private var fogBanks: [(node: SKSpriteNode, speed: CGFloat)] = []
+    private let vignette = SKSpriteNode(texture: EffectTextures.vignette)
+    private let dangerVignette = SKSpriteNode(texture: EffectTextures.dangerVignette)
+    private let grain = SKSpriteNode(texture: EffectTextures.grain)
+    private var grainTimer: TimeInterval = 0
+    private var decals: [SKNode] = []
+    private var isDanger = false
+
     // MARK: State
     private var isRunning = false
     private var hasSetUp = false
@@ -252,8 +262,8 @@ final class GameScene: SKScene {
 
     private func perkActive(_ perk: Perk) -> Bool { perkTime[perk, default: 0] > 0 }
 
-    private static let daySky = UIColor(red: 0.42, green: 0.55, blue: 0.62, alpha: 1)
-    private static let nightSky = UIColor(red: 0.06, green: 0.07, blue: 0.13, alpha: 1)
+    private static let daySky = Palette.daySky
+    private static let nightSky = Palette.nightSky
 
     // MARK: Lifecycle
 
@@ -271,6 +281,20 @@ final class GameScene: SKScene {
         stars.alpha = 0
         addChild(stars)
         addChild(background)
+
+        fogLayer.zPosition = 12           // drifts over the zombies, under the bullets
+        fogLayer.alpha = 0.22
+        addChild(fogLayer)
+        for overlay in [dangerVignette, vignette, grain] {
+            overlay.anchorPoint = .zero
+            addChild(overlay)
+        }
+        dangerVignette.zPosition = 59
+        dangerVignette.alpha = 0
+        vignette.zPosition = 60
+        vignette.alpha = 0.85
+        grain.zPosition = 61
+        grain.alpha = 0.07
 
         survivor.anchorPoint = CGPoint(x: 0.5, y: 0)
         survivor.zPosition = 20
@@ -295,6 +319,10 @@ final class GameScene: SKScene {
 
     private func layout() {
         sky.size = size
+        vignette.size = size
+        dangerVignette.size = size
+        grain.size = CGSize(width: size.width * 1.3, height: size.height * 1.3)
+        buildFog()
         drawStars()
         drawBackground()
         survivor.position = CGPoint(x: size.width / 2, y: 30)
@@ -350,17 +378,26 @@ final class GameScene: SKScene {
     private func drawStars() {
         stars.removeAllChildren()
         guard size.width > 0, size.height > groundHeight + 40 else { return }
-        for _ in 0..<40 {
-            let star = SKSpriteNode(color: UIColor(white: 1, alpha: CGFloat.random(in: 0.3...0.9)),
+        for _ in 0..<30 {
+            let star = SKSpriteNode(color: UIColor(white: 1, alpha: CGFloat.random(in: 0.15...0.5)),
                                     size: CGSize(width: 2, height: 2))
             star.position = CGPoint(x: CGFloat.random(in: 0...size.width),
                                     y: CGFloat.random(in: (groundHeight + 40)...size.height))
             stars.addChild(star)
         }
+        // Blood moon with a soft red halo.
+        let moonPosition = CGPoint(x: size.width * 0.82, y: size.height - 50)
+        let halo = SKSpriteNode(texture: EffectTextures.fog, size: CGSize(width: 130, height: 130))
+        halo.color = Palette.bloodRed
+        halo.colorBlendFactor = 1
+        halo.alpha = 0.6
+        halo.position = moonPosition
+        stars.addChild(halo)
         let moon = SKShapeNode(circleOfRadius: 18)
-        moon.fillColor = UIColor(red: 0.95, green: 0.93, blue: 0.80, alpha: 1)
-        moon.strokeColor = .clear
-        moon.position = CGPoint(x: size.width * 0.82, y: size.height - 50)
+        moon.fillColor = UIColor(red: 0.72, green: 0.12, blue: 0.08, alpha: 1)
+        moon.strokeColor = UIColor(red: 0.9, green: 0.3, blue: 0.2, alpha: 0.6)
+        moon.lineWidth = 1.5
+        moon.position = moonPosition
         stars.addChild(moon)
     }
 
@@ -369,6 +406,125 @@ final class GameScene: SKScene {
         let duration = 1.2
         sky.run(.colorize(with: night ? Self.nightSky : Self.daySky, colorBlendFactor: 1, duration: duration))
         stars.run(.fadeAlpha(to: night ? 1 : 0, duration: duration))
+        // Night fog thickens and turns red.
+        fogLayer.run(.fadeAlpha(to: night ? 0.38 : 0.22, duration: duration))
+        for bank in fogBanks {
+            bank.node.run(.colorize(with: night ? Palette.fogNight : Palette.fogDay,
+                                    colorBlendFactor: 1, duration: duration))
+        }
+        vignette.run(.fadeAlpha(to: night ? 1 : 0.85, duration: duration))
+    }
+
+    // MARK: Atmosphere
+
+    private func buildFog() {
+        fogLayer.removeAllChildren()
+        fogBanks.removeAll()
+        guard size.width > 0, size.height > groundHeight + 60 else { return }
+        for _ in 0..<6 {
+            let bank = SKSpriteNode(texture: EffectTextures.fog,
+                                    size: CGSize(width: size.width * CGFloat.random(in: 0.8...1.3),
+                                                 height: CGFloat.random(in: 110...190)))
+            bank.color = isNight ? Palette.fogNight : Palette.fogDay
+            bank.colorBlendFactor = 1
+            bank.position = CGPoint(x: CGFloat.random(in: 0...size.width),
+                                    y: CGFloat.random(in: (groundHeight + 30)...(size.height * 0.85)))
+            fogLayer.addChild(bank)
+            let speed = CGFloat.random(in: 6...16) * (Bool.random() ? 1 : -1)
+            fogBanks.append((bank, speed))
+        }
+    }
+
+    /// Fog drifts and grain jitters all the time, even between waves.
+    private func animateAtmosphere(_ dt: TimeInterval) {
+        for bank in fogBanks {
+            bank.node.position.x += bank.speed * CGFloat(dt)
+            let half = bank.node.size.width / 2
+            if bank.speed > 0 && bank.node.position.x - half > size.width { bank.node.position.x = -half }
+            if bank.speed < 0 && bank.node.position.x + half < 0 { bank.node.position.x = size.width + half }
+        }
+        grainTimer -= dt
+        if grainTimer <= 0 {
+            grainTimer = 0.05
+            grain.position = CGPoint(x: -CGFloat.random(in: 0...(size.width * 0.3)),
+                                     y: -CGFloat.random(in: 0...(size.height * 0.3)))
+        }
+    }
+
+    /// Red pulsing edges when the barricade is about to fall.
+    func setDanger(_ on: Bool) {
+        guard on != isDanger else { return }
+        isDanger = on
+        dangerVignette.removeAllActions()
+        if on {
+            dangerVignette.run(.repeatForever(.sequence([
+                .fadeAlpha(to: 0.9, duration: 0.45), .fadeAlpha(to: 0.3, duration: 0.45),
+            ])))
+        } else {
+            dangerVignette.run(.fadeOut(withDuration: 0.3))
+        }
+    }
+
+    /// Blood stays on the ground for a while, then soaks away.
+    private func bloodDecal(at point: CGPoint, size spread: CGFloat) {
+        let decal = SKNode()
+        decal.position = point
+        decal.zPosition = 2
+        let pieces = spread > 40 ? 14 : 7
+        for _ in 0..<pieces {
+            let side = [4, 4, 6, 8].randomElement() ?? 4
+            let drop = SKSpriteNode(color: Bool.random() ? Palette.blood : Palette.bloodDark,
+                                    size: CGSize(width: side, height: side))
+            drop.position = CGPoint(x: CGFloat.random(in: -spread * 0.45...spread * 0.45),
+                                    y: CGFloat.random(in: -spread * 0.25...spread * 0.25))
+            decal.addChild(drop)
+        }
+        addChild(decal)
+        decals.append(decal)
+        if decals.count > 50 {
+            decals.removeFirst().removeFromParent()
+        }
+        decal.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 4), .removeFromParent()]))
+    }
+
+    /// Flickering blood-red wave number with a red flash, like a dying light.
+    private func showWaveIntro(night: Bool, label: String) {
+        let flash = SKSpriteNode(color: Palette.bloodRed, size: size)
+        flash.anchorPoint = .zero
+        flash.zPosition = 65
+        flash.alpha = night ? 0.45 : 0.3
+        addChild(flash)
+        flash.run(.sequence([.fadeOut(withDuration: 0.6), .removeFromParent()]))
+
+        let heading = SKLabelNode(text: night ? "NIGHT FALLS" : "WAVE")
+        heading.fontName = "Futura-CondensedExtraBold"
+        heading.fontSize = 24
+        heading.fontColor = Palette.bone
+        heading.position = CGPoint(x: size.width / 2, y: size.height * 0.62)
+
+        let number = SKLabelNode(text: label)
+        number.fontName = "Futura-CondensedExtraBold"
+        number.fontSize = 104
+        number.fontColor = Palette.bloodRed
+        number.position = CGPoint(x: size.width / 2, y: size.height * 0.62 - 100)
+
+        let flicker = SKAction.sequence([
+            .fadeAlpha(to: 1, duration: 0.04), .wait(forDuration: 0.08),
+            .fadeAlpha(to: 0.15, duration: 0.03), .wait(forDuration: 0.07),
+            .fadeAlpha(to: 1, duration: 0.03), .wait(forDuration: 1.1),
+            .fadeAlpha(to: 0.3, duration: 0.04), .fadeAlpha(to: 1, duration: 0.04),
+            .wait(forDuration: 0.25), .fadeOut(withDuration: 0.5), .removeFromParent(),
+        ])
+        for label in [heading, number] {
+            label.zPosition = 70
+            label.alpha = 0
+            label.name = "fx"
+            addChild(label)
+            label.run(flicker)
+        }
+        number.setScale(1.6)
+        number.run(.scale(to: 1, duration: 0.25))
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
     }
 
     // MARK: Game flow
@@ -387,6 +543,13 @@ final class GameScene: SKScene {
         sky.color = Self.daySky
         stars.alpha = 0
         isNight = false
+        fogLayer.alpha = 0.22
+        fogBanks.forEach { $0.node.removeAllActions(); $0.node.color = Palette.fogDay }
+        vignette.alpha = 0.85
+        decals.forEach { $0.removeFromParent() }
+        decals.removeAll()
+        isDanger = true
+        setDanger(false)
         perkTime = [:]
         publishedPerks = [:]
         model?.perksChanged([:])
@@ -417,7 +580,7 @@ final class GameScene: SKScene {
         spawnInterval = max(0.35, 1.1 - Double(wave) * 0.04) * (night ? 0.8 : 1)
         spawnTimer = 0.6
         model.waveStarted(wave, night: night)
-        showBanner(night ? "NIGHT \(model.waveLabel)" : "DAY \(model.waveLabel)", size: 40, hold: 1.0)
+        showWaveIntro(night: night, label: model.waveLabel)
     }
 
     private func waveCleared() {
@@ -450,10 +613,10 @@ final class GameScene: SKScene {
                 lock.alpha = isNextLocked ? 1 : 0.45
                 node.addChild(lock)
                 if isNextLocked, let cost = model.unlockCost {
-                    let price = SKLabelNode(text: "🧟\(cost)")
-                    price.fontName = "Menlo-Bold"
-                    price.fontSize = 10
-                    price.fontColor = .yellow
+                    let price = SKLabelNode(text: "\u{2620}\u{FE0E}\(cost)")
+                    price.fontName = "Futura-CondensedExtraBold"
+                    price.fontSize = 12
+                    price.fontColor = Palette.bloodRed
                     price.position = CGPoint(x: 0, y: -2)
                     node.addChild(price)
                 }
@@ -545,6 +708,7 @@ final class GameScene: SKScene {
     override func update(_ currentTime: TimeInterval) {
         let rawDt = lastUpdate == 0 ? 0 : min(currentTime - lastUpdate, 1.0 / 20.0)
         lastUpdate = currentTime
+        animateAtmosphere(rawDt)
         guard isRunning, let model = model else { return }
         let dt = rawDt * Double(speed) // the 2x button doubles game time
 
@@ -692,6 +856,8 @@ final class GameScene: SKScene {
         let reward = zombie.kind.reward * (perkActive(.doubleMoney) ? 2 : 1)
         model?.zombieKilled(reward: reward)
         splat(at: zombie.position, size: zombie.size.width)
+        bloodDecal(at: CGPoint(x: zombie.position.x, y: zombie.position.y - zombie.size.height * 0.3),
+                   size: zombie.size.width)
         popLabel("+\(reward)", at: zombie.position)
         if zombie.kind == .bloater {
             burst(from: zombie)
@@ -917,9 +1083,9 @@ final class GameScene: SKScene {
 
     private func popLabel(_ text: String, at point: CGPoint) {
         let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
+        label.fontName = "Futura-CondensedExtraBold"
         label.fontSize = 16
-        label.fontColor = Palette.bullet
+        label.fontColor = Palette.bone
         label.position = point
         label.zPosition = 40
         addChild(label)
@@ -931,11 +1097,11 @@ final class GameScene: SKScene {
 
     private func showBanner(_ text: String, size fontSize: CGFloat, hold: TimeInterval, y: CGFloat = 0.6) {
         let label = SKLabelNode(text: text)
-        label.fontName = "Menlo-Bold"
+        label.fontName = "Futura-CondensedExtraBold"
         label.fontSize = fontSize
-        label.fontColor = .white
+        label.fontColor = Palette.bone
         label.position = CGPoint(x: size.width / 2, y: size.height * y)
-        label.zPosition = 50
+        label.zPosition = 70
         label.alpha = 0
         addChild(label)
         label.run(.sequence([

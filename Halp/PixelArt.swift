@@ -239,3 +239,57 @@ enum Sprites {
         "P": UIColor(white: 1, alpha: 0.30),
     ])
 }
+
+// MARK: - Atmosphere textures (fog, vignette, film grain)
+
+enum EffectTextures {
+    /// Soft white blob, tinted and stretched into drifting fog banks.
+    static let fog = radial(size: 256,
+                            colors: [UIColor(white: 1, alpha: 0.55), UIColor(white: 1, alpha: 0.2), .clear],
+                            locations: [0, 0.5, 1])
+
+    /// Clear in the middle, dark at the edges. Stretched over the whole battlefield.
+    static let vignette = radial(size: 256,
+                                 colors: [.clear, .clear, UIColor(white: 0, alpha: 0.9)],
+                                 locations: [0, 0.5, 1])
+
+    /// Same shape in blood red, pulsed when the barricade is about to fall.
+    static let dangerVignette = radial(size: 256,
+                                       colors: [.clear, .clear, UIColor(red: 0.7, green: 0, blue: 0, alpha: 0.85)],
+                                       locations: [0, 0.45, 1])
+
+    /// Random speckle for film grain.
+    static let grain: SKTexture = {
+        let side = 96
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).image { ctx in
+            for y in 0..<side {
+                for x in 0..<side where Int.random(in: 0..<3) == 0 {
+                    UIColor(white: CGFloat.random(in: 0...1), alpha: CGFloat.random(in: 0.2...0.7)).setFill()
+                    ctx.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+        let texture = SKTexture(image: image)
+        texture.filteringMode = .nearest
+        return texture
+    }()
+
+    private static func radial(size: CGFloat, colors: [UIColor], locations: [CGFloat]) -> SKTexture {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: CGSize(width: size, height: size), format: format).image { ctx in
+            guard let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                                            colors: colors.map(\.cgColor) as CFArray,
+                                            locations: locations) else { return }
+            let center = CGPoint(x: size / 2, y: size / 2)
+            ctx.cgContext.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
+                                             endCenter: center, endRadius: size / 2,
+                                             options: [.drawsAfterEndLocation])
+        }
+        return SKTexture(image: image)
+    }
+}

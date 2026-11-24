@@ -313,6 +313,7 @@ final class GameModel: ObservableObject {
         kills -= cost(upgrade)
         if upgrade == .repair {
             baseHP = min(maxBaseHP, baseHP + 5)
+            refreshDanger()
         } else {
             levels[upgrade, default: 0] += 1
         }
@@ -372,10 +373,16 @@ final class GameModel: ObservableObject {
         activePerks = perks
     }
 
+    /// Red pulsing screen edges when the barricade is at 30% or less.
+    private func refreshDanger() {
+        scene.setDanger(baseHP > 0 && baseHP * 10 <= maxBaseHP * 3)
+    }
+
     func baseHit(damage: Int) {
         guard phase == .playing else { return }
         baseHP = max(0, baseHP - damage)
         UINotificationFeedbackGenerator().notificationOccurred(.warning)
+        refreshDanger()
         if baseHP == 0 {
             if progress > bestWave {
                 bestWave = progress
