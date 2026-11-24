@@ -9,7 +9,17 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 - **Top bar:** wave, barricade health and kills (your currency) on the left. A **sun/moon** in the top middle shows whether it's day or night. **Play** and **Pause** are top right: Play sends the next wave (or resumes), Pause freezes the current one.
 - **Battlefield:** zombies walk down toward the barricade. Every one that reaches it damages the barricade. At 0 HP you're overrun.
 - **>> button:** just above the barricade on the right, toggles 2x speed.
-- **Defense line:** the survivor stands in the middle, with 4 turret spots in two rows, two on each side.
+- **Defense line:** the survivor stands in the middle with **8 slots** in two rows of four, two on each side.
+  - 2 slots are free from the start. The other 6 are locked and unlock **in order**: one free every 4 waves, or buy the next one early with kills.
+  - Tap an unlocked slot to build a **Turret** (fast, one target) or a **Catapult** (slow, lobs rocks that splash a group). Each extra one costs more.
+- **Perks:** after wave 5, killed zombies have a small chance (4%, bosses always) to drop a perk. It flies to the top and activates. Timers show at the top of the battlefield and only run down during waves.
+
+| Perk | Lasts | Effect |
+| --- | --- | --- |
+| 💰 Double Money | 20s | Kills pay double |
+| 💀 Insta-Kill | 8s | Every hit kills a normal zombie; bosses take +30% damage instead |
+| 🧪 Poison Bullets | 15s | Bullets also poison: extra damage over 3s |
+
 - **Day and night:** every 3rd wave (3, 6, 9…) is a night. Nights are much shorter (half the zombies, spawning faster) but zombies get +60% health and +10% speed on top of the normal per-wave health increase.
 - **Zombie types:**
 
@@ -29,8 +39,8 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | Damage | Survivor's bullets hit harder (×1.3 per level) |
 | Fire Rate | Survivor shoots faster (max level 15) |
 | Multi-Shot | Fire at 2, then 3 zombies at once |
-| Turret | Builds a turret on the next empty spot (4 spots) |
 | Turret Pwr | All turrets hit harder and fire faster |
+| Catapult Pwr | All catapults hit harder, fire faster, splash wider |
 | Repair | Restores 5 barricade HP |
 
 ## Running it on a Mac
@@ -61,7 +71,7 @@ A tiny pixel survivor stands behind a barricade at the bottom of the screen. Zom
 | `Halp/PixelArt.swift` | Pixel sprites drawn from text grids (no image files needed) |
 | `Halp/Palette.swift` | Colors |
 
-**Tuning:** upgrade costs and the day/night rule (`isNight(wave:)`) are in `GameModel.swift`. Zombie health, speed and rewards are in the `Zombie.Kind` enum in `GameScene.swift`; the night boost is `nightHPMultiplier`; which zombies appear when is `randomKind()`; wave size and spawn rate are in `startNextWave()`.
+**Tuning:** upgrade, slot and build costs, perk drop chance and durations, the free-unlock interval and the day/night rule (`isNight(wave:)`) are in `GameModel.swift`. Zombie health, speed and rewards are in the `Zombie.Kind` enum in `GameScene.swift`; the night boost is `nightHPMultiplier`; which zombies appear when is `randomKind()`; wave size and spawn rate are in `startNextWave()`.
 
 **Getting an IPA:** every push builds an unsigned `Halp.ipa` on GitHub Actions (see the *Build IPA* workflow, *Artifacts* section). Install it with Sideloadly or AltStore, which sign it with your Apple ID.
 

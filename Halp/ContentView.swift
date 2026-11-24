@@ -19,6 +19,11 @@ struct ContentView: View {
                             .padding(.trailing, 12)
                             .padding(.bottom, 146) // just above the barricade line
                     }
+                    .overlay(alignment: .top) {
+                        PerkBar(perks: model.activePerks)
+                            .padding(.top, 8)
+                            .allowsHitTesting(false)
+                    }
                     .overlay {
                         if model.isPaused {
                             Text("PAUSED")
@@ -47,6 +52,99 @@ struct ContentView: View {
         }
         .statusBarHidden(true)
         .animation(.easeOut(duration: 0.25), value: model.phase)
+        .confirmationDialog(slotTitle, isPresented: slotDialogShown, titleVisibility: .visible) {
+            slotButtons
+        } message: {
+            Text(slotMessage)
+        }
+    }
+
+    // MARK: Slot menu (tap a slot on the battlefield)
+
+    private var slotDialogShown: Binding<Bool> {
+        Binding(get: { model.selectedSlot != nil },
+                set: { if !$0 { model.selectedSlot = nil } })
+    }
+
+    private var slotTitle: String {
+        guard let index = model.selectedSlot else { return "" }
+        return model.slots[index] == .locked ? "Locked slot" : "Build on this slot"
+    }
+
+    @ViewBuilder private var slotButtons: some View {
+        if let index = model.selectedSlot {
+            if model.slots[index] == .locked {
+                if index == model.nextLockedSlot, let cost = model.unlockCost, model.kills >= cost {
+                    Button("Unlock for 🧟 \(cost)") { model.unlockSlot(index) }
+                }
+            } else if model.slots[index] == .empty {
+                let turretCost = model.buildCost(.turret)
+                let catapultCost = model.buildCost(.catapult)
+                if model.kills >= turretCost {
+                    Button("Turret – 🧟 \(turretCost)") { model.build(.turret, at: index) }
+                }
+                if model.kills >= catapultCost {
+                    Button("Catapult – 🧟 \(catapultCost)") { model.build(.catapult, at: index) }
+                }
+            }
+        }
+        Button("Cancel", role: .cancel) {}
+    }
+
+    private var slotMessage: String {
+        guard let index = model.selectedSlot else { return "" }
+        switch model.slots[index] {
+        case .locked:
+            guard index == model.nextLockedSlot, let cost = model.unlockCost else {
+                return "Slots unlock in order. Unlock the brighter padlock first."
+            }
+            var text = "Unlock now for 🧟 \(cost)"
+            if let freeWave = model.nextFreeUnlockWave {
+                text += ", or wait: it unlocks free after wave \(freeWave)."
+            }
+            if model.kills < cost {
+                text += "\n\nYou have 🧟 \(model.kills)."
+            }
+            return text
+        case .empty:
+            var text = "Turret (🧟 \(model.buildCost(.turret))): fast shots at one zombie.\n"
+                + "Catapult (🧟 \(model.buildCost(.catapult))): slow, lobs rocks that hit a whole group."
+            if model.kills < min(model.buildCost(.turret), model.buildCost(.catapult)) {
+                text += "\n\nYou have 🧟 \(model.kills). Kill more zombies!"
+            }
+            return text
+        case .turret, .catapult:
+            return ""
+        }
+    }
+}
+
+// MARK: - Active perks
+
+/// Little timers along the top of the battlefield for each active perk.
+private struct PerkBar: View {
+    let perks: [Perk: Int]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(Perk.allCases, id: \.self) { perk in
+                if let secondsLeft = perks[perk] {
+                    HStack(spacing: 4) {
+                        Text(perk.emoji)
+                        Text("\(secondsLeft)s")
+                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .monospacedDigit()
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.black.opacity(0.6)))
+                    .overlay(Capsule().stroke(Color(perk.color), lineWidth: 2))
+                    .accessibilityLabel("\(perk.title), \(secondsLeft) seconds left")
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: perks.keys.count)
     }
 }
 
@@ -273,7 +371,7 @@ private struct MenuOverlay: View {
                 .font(.system(size: 76, weight: .black, design: .monospaced))
                 .foregroundStyle(.white)
                 .shadow(color: .green.opacity(0.6), radius: 0, x: 4, y: 4)
-            Text("Hold the barricade.\nPress ▶ to send each wave.\nEvery 3rd wave is a short,\nbrutal night.")
+            Text("Hold the barricade.\nPress ▶ to send each wave.\nTap a slot to build turrets\nand catapults. Every 3rd wave\nis a short, brutal night.")
                 .multilineTextAlignment(.center)
                 .font(.system(size: 15, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.8))

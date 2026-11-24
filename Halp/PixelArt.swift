@@ -180,6 +180,46 @@ enum Sprites {
         "D": UIColor(red: 0.22, green: 0.22, blue: 0.24, alpha: 1),
     ])
 
+    // MARK: Catapult
+
+    static let catapultRows = [
+        "........RR.",
+        ".......RRRR",
+        "......WWRR.",
+        ".....WW....",
+        "....WW.....",
+        "...WW......",
+        ".FFFFFFFFF.",
+        ".F.......F.",
+        "OO.......OO",
+        "OO.......OO",
+    ]
+
+    static let catapult = PixelArt.texture(catapultRows, palette: [
+        "R": UIColor(red: 0.55, green: 0.55, blue: 0.58, alpha: 1),
+        "W": UIColor(red: 0.62, green: 0.43, blue: 0.24, alpha: 1),
+        "F": UIColor(red: 0.42, green: 0.28, blue: 0.15, alpha: 1),
+        "O": UIColor(red: 0.20, green: 0.18, blue: 0.16, alpha: 1),
+    ])
+
+    // MARK: Locked slot
+
+    static let lockRows = [
+        "...LLL...",
+        "..L...L..",
+        "..L...L..",
+        ".BBBBBBB.",
+        ".BBBKBBB.",
+        ".BBBKBBB.",
+        ".BBBBBBB.",
+    ]
+
+    static let lock = PixelArt.texture(lockRows, palette: [
+        "L": UIColor(white: 0.75, alpha: 0.8),
+        "B": UIColor(red: 0.75, green: 0.60, blue: 0.20, alpha: 0.85),
+        "K": UIColor(white: 0.1, alpha: 0.9),
+    ])
+
     // MARK: Empty turret spot
 
     static let padRows = [

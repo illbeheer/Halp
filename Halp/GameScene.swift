@@ -117,6 +117,8 @@ final class Zombie: SKSpriteNode {
     let maxHP: CGFloat
     let walkSpeed: CGFloat
     private(set) var hp: CGFloat
+    private(set) var poisonLeft: TimeInterval = 0
+    private var poisonDPS: CGFloat = 0
     private let hpBar: SKSpriteNode
     private let hpBack: SKSpriteNode
 
@@ -152,13 +154,35 @@ final class Zombie: SKSpriteNode {
     }
 
     /// Returns true if this hit killed the zombie.
-    func takeHit(_ damage: CGFloat) -> Bool {
+    func takeHit(_ damage: CGFloat, flash: Bool = true) -> Bool {
         hp -= damage
         hpBack.isHidden = false
         hpBar.xScale = max(0, hp / maxHP)
-        colorBlendFactor = 0.75
-        run(.colorize(withColorBlendFactor: 0, duration: 0.12), withKey: "flash")
+        if flash {
+            colorBlendFactor = 0.75
+            run(.colorize(withColorBlendFactor: 0, duration: 0.12), withKey: "flash")
+        }
         return hp <= 0
+    }
+
+    /// Poison deals damage over time; a new dose refreshes it (keeping the stronger one).
+    func poison(dps: CGFloat, duration: TimeInterval) {
+        poisonDPS = max(poisonDPS, dps)
+        poisonLeft = duration
+        hpBack.isHidden = false
+        hpBar.color = Perk.poison.color
+    }
+
+    /// Returns true if the poison killed the zombie.
+    func tickPoison(_ dt: TimeInterval) -> Bool {
+        guard poisonLeft > 0 else { return false }
+        let step = min(dt, poisonLeft)
+        poisonLeft -= step
+        if poisonLeft <= 0 {
+            poisonDPS = 0
+            hpBar.color = .red
+        }
+        return takeHit(poisonDPS * CGFloat(step), flash: false)
     }
 }
 
@@ -183,9 +207,15 @@ final class GameScene: SKScene {
     private let nightSpeedMultiplier: CGFloat = 1.1
     /// Nights are considerably shorter than days: this fraction of a day wave's zombies.
     private let nightLengthMultiplier: CGFloat = 0.5
-    /// Turret spots (fraction of width, height above bottom), filled in this order:
-    /// upper-left, upper-right, lower-left, lower-right.
-    private let turretSlots: [(x: CGFloat, y: CGFloat)] = [(0.20, 62), (0.80, 62), (0.33, 8), (0.80, 8)]
+    /// The 8 turret/catapult slots: two rows of four, two each side of the survivor.
+    /// (fraction of width, height above bottom), listed in unlock order:
+    /// the 2 free inner-upper slots, then inner-lower, then outer-upper, then outer-lower.
+    private let slotLayout: [(x: CGFloat, y: CGFloat)] = [
+        (0.29, 62), (0.71, 62),
+        (0.29, 8), (0.71, 8),
+        (0.09, 62), (0.91, 62),
+        (0.09, 8), (0.91, 8),
+    ]
 
     // MARK: Nodes
     private let sky = SKSpriteNode(color: .white, size: .zero)
@@ -193,9 +223,9 @@ final class GameScene: SKScene {
     private let background = SKNode()
     private let survivor = SKSpriteNode(texture: Sprites.survivor,
                                         size: PixelArt.size(Sprites.survivorRows, pixel: 4))
-    private var pads: [SKSpriteNode] = []
-    private var turrets: [SKSpriteNode] = []
-    private var turretCooldowns: [TimeInterval] = []
+    private var slotNodes: [SKNode] = []
+    private var slotShown: [SlotState?] = []
+    private var slotCooldowns: [TimeInterval] = []
     private var zombies: [Zombie] = []
     private var bullets: [Bullet] = []
 
@@ -211,6 +241,10 @@ final class GameScene: SKScene {
     private var spawnTimer: TimeInterval = 0
     private var spawnInterval: TimeInterval = 1
     private var playerCooldown: TimeInterval = 0
+    private var perkTime: [Perk: TimeInterval] = [:]
+    private var publishedPerks: [Perk: Int] = [:]
+
+    private func perkActive(_ perk: Perk) -> Bool { perkTime[perk, default: 0] > 0 }
 
     private static let daySky = UIColor(red: 0.42, green: 0.55, blue: 0.62, alpha: 1)
     private static let nightSky = UIColor(red: 0.06, green: 0.07, blue: 0.13, alpha: 1)
@@ -236,14 +270,16 @@ final class GameScene: SKScene {
         survivor.zPosition = 20
         addChild(survivor)
 
-        for _ in turretSlots {
-            let pad = SKSpriteNode(texture: Sprites.pad, size: PixelArt.size(Sprites.padRows, pixel: 4))
-            pad.anchorPoint = CGPoint(x: 0.5, y: 0)
-            pad.zPosition = 15
-            addChild(pad)
-            pads.append(pad)
+        for _ in slotLayout {
+            let node = SKNode()
+            node.zPosition = 15
+            addChild(node)
+            slotNodes.append(node)
+            slotShown.append(nil)
+            slotCooldowns.append(0)
         }
         layout()
+        syncSlots()
     }
 
     override func didChangeSize(_ oldSize: CGSize) {
@@ -256,16 +292,13 @@ final class GameScene: SKScene {
         drawStars()
         drawBackground()
         survivor.position = CGPoint(x: size.width / 2, y: 30)
-        for (index, pad) in pads.enumerated() {
-            pad.position = slotPosition(index)
-        }
-        for (index, turret) in turrets.enumerated() {
-            turret.position = slotPosition(index)
+        for (index, node) in slotNodes.enumerated() {
+            node.position = slotPosition(index)
         }
     }
 
     private func slotPosition(_ index: Int) -> CGPoint {
-        CGPoint(x: size.width * turretSlots[index].x, y: turretSlots[index].y)
+        CGPoint(x: size.width * slotLayout[index].x, y: slotLayout[index].y)
     }
 
     /// Dirt, grass line and a wooden barricade, all built from flat blocks for a pixel look.
@@ -339,6 +372,7 @@ final class GameScene: SKScene {
         zombies.removeAll()
         bullets.forEach { $0.removeFromParent() }
         bullets.removeAll()
+        enumerateChildNodes(withName: "fx") { node, _ in node.removeFromParent() }
         wave = 0
         waveActive = false
         toSpawn = 0
@@ -347,7 +381,11 @@ final class GameScene: SKScene {
         sky.color = Self.daySky
         stars.alpha = 0
         isNight = false
-        syncTurrets()
+        perkTime = [:]
+        publishedPerks = [:]
+        model?.perksChanged([:])
+        slotCooldowns = slotCooldowns.map { _ in 0 }
+        syncSlots()
         isRunning = true
         showBanner("PRESS ▶ TO START", size: 24, hold: 2.0)
     }
@@ -381,29 +419,71 @@ final class GameScene: SKScene {
         showBanner("WAVE \(wave) CLEARED", size: 26, hold: 1.2)
     }
 
-    /// Show a turret on each owned slot, and an empty pad on the rest.
-    func syncTurrets() {
-        let count = model?.turretCount ?? 0
-        while turrets.count > count {
-            turrets.removeLast().removeFromParent()
-            turretCooldowns.removeLast()
-        }
-        while turrets.count < count, turrets.count < pads.count {
-            let index = turrets.count
-            let turret = SKSpriteNode(texture: Sprites.turret, size: PixelArt.size(Sprites.turretRows, pixel: 4))
-            turret.anchorPoint = CGPoint(x: 0.5, y: 0)
-            turret.position = slotPosition(index)
-            turret.zPosition = 18
-            addChild(turret)
-            turrets.append(turret)
-            turretCooldowns.append(0)
+    /// Redraw each slot to match the model: padlock, empty pad, turret or catapult.
+    func syncSlots() {
+        guard let model = model, !slotNodes.isEmpty else { return }
+        for (index, node) in slotNodes.enumerated() {
+            let state = model.slots[index]
+            let isNextLocked = index == model.nextLockedSlot
+            // Locked slots are redrawn every time so the "next unlock" price stays current.
+            guard slotShown[index] != state || state == .locked else { continue }
+            let wasShown = slotShown[index]
+            slotShown[index] = state
+            node.removeAllChildren()
 
-            turret.setScale(0.2)
-            turret.run(.scale(to: 1, duration: 0.2))
+            switch state {
+            case .locked:
+                let pad = SKSpriteNode(texture: Sprites.pad, size: PixelArt.size(Sprites.padRows, pixel: 4))
+                pad.anchorPoint = CGPoint(x: 0.5, y: 0)
+                pad.alpha = 0.4
+                node.addChild(pad)
+                let lock = SKSpriteNode(texture: Sprites.lock, size: PixelArt.size(Sprites.lockRows, pixel: 3))
+                lock.position = CGPoint(x: 0, y: 18)
+                lock.alpha = isNextLocked ? 1 : 0.45
+                node.addChild(lock)
+                if isNextLocked, let cost = model.unlockCost {
+                    let price = SKLabelNode(text: "🧟\(cost)")
+                    price.fontName = "Menlo-Bold"
+                    price.fontSize = 10
+                    price.fontColor = .yellow
+                    price.position = CGPoint(x: 0, y: -2)
+                    node.addChild(price)
+                }
+            case .empty:
+                let pad = SKSpriteNode(texture: Sprites.pad, size: PixelArt.size(Sprites.padRows, pixel: 4))
+                pad.anchorPoint = CGPoint(x: 0.5, y: 0)
+                node.addChild(pad)
+                pad.run(.repeatForever(.sequence([.fadeAlpha(to: 0.5, duration: 0.6),
+                                                   .fadeAlpha(to: 1, duration: 0.6)])))
+                if wasShown == .locked {
+                    pop(node)
+                }
+            case .turret:
+                let turret = SKSpriteNode(texture: Sprites.turret, size: PixelArt.size(Sprites.turretRows, pixel: 4))
+                turret.anchorPoint = CGPoint(x: 0.5, y: 0)
+                turret.name = "body"
+                node.addChild(turret)
+                slotCooldowns[index] = 0
+                if wasShown != nil { pop(node) }
+            case .catapult:
+                let catapult = SKSpriteNode(texture: Sprites.catapult, size: PixelArt.size(Sprites.catapultRows, pixel: 4))
+                catapult.anchorPoint = CGPoint(x: 0.5, y: 0)
+                catapult.name = "body"
+                node.addChild(catapult)
+                slotCooldowns[index] = 0.5
+                if wasShown != nil { pop(node) }
+            }
         }
-        for (index, pad) in pads.enumerated() {
-            pad.isHidden = index < turrets.count
-        }
+    }
+
+    private func pop(_ node: SKNode) {
+        node.setScale(0.2)
+        node.run(.scale(to: 1, duration: 0.2))
+    }
+
+    /// A short banner, e.g. for a slot unlocking or a perk.
+    func announce(_ text: String) {
+        showBanner(text, size: 24, hold: 1.0, y: 0.45)
     }
 
     /// Which zombie types can appear, and how often, by wave.
@@ -473,6 +553,14 @@ final class GameScene: SKScene {
             }
         }
 
+        // Perk timers only run down during a wave, not while you shop between waves.
+        if waveActive { tickPerks(dt) }
+
+        // Poison damage over time
+        for zombie in zombies where zombie.poisonLeft > 0 {
+            if zombie.tickPoison(dt) { kill(zombie) }
+        }
+
         // Zombies walk toward the barricade.
         for zombie in zombies {
             zombie.position.y -= zombie.walkSpeed * CGFloat(dt)
@@ -498,15 +586,26 @@ final class GameScene: SKScene {
             }
         }
 
-        // Turrets each pick the closest zombie.
-        for index in turrets.indices {
-            turretCooldowns[index] -= dt
-            guard turretCooldowns[index] <= 0, let target = closestZombies(1).first else { continue }
-            let turret = turrets[index]
-            let muzzle = CGPoint(x: turret.position.x, y: turret.position.y + turret.size.height)
-            fire(from: muzzle, at: target, damage: model.turretDamage, color: Palette.turretBullet)
-            flash(at: muzzle)
-            turretCooldowns[index] = model.turretInterval
+        // Turrets and catapults
+        for index in slotNodes.indices {
+            let state = model.slots[index]
+            guard state == .turret || state == .catapult else { continue }
+            slotCooldowns[index] -= dt
+            guard slotCooldowns[index] <= 0, let target = closestZombies(1).first else { continue }
+            let node = slotNodes[index]
+            if state == .turret {
+                let muzzle = CGPoint(x: node.position.x, y: node.position.y + 36)
+                fire(from: muzzle, at: target, damage: model.turretDamage, color: Palette.turretBullet)
+                flash(at: muzzle)
+                slotCooldowns[index] = model.turretInterval
+            } else {
+                launchRock(from: CGPoint(x: node.position.x + 12, y: node.position.y + 40), at: target,
+                           damage: model.catapultDamage, radius: model.catapultRadius)
+                if let body = node.childNode(withName: "body") {
+                    body.run(.sequence([.scaleY(to: 0.85, duration: 0.06), .scaleY(to: 1, duration: 0.12)]))
+                }
+                slotCooldowns[index] = model.catapultInterval
+            }
         }
 
         moveBullets(dt)
@@ -531,7 +630,8 @@ final class GameScene: SKScene {
         let dx = aim.x - origin.x, dy = aim.y - origin.y
         let length = max(1, hypot(dx, dy))
 
-        let bullet = Bullet(color: color, size: CGSize(width: 3, height: 9))
+        let bullet = Bullet(color: perkActive(.poison) ? Perk.poison.color : color,
+                            size: CGSize(width: 3, height: 9))
         bullet.position = origin
         bullet.zPosition = 25
         bullet.zRotation = atan2(dy, dx) - .pi / 2
@@ -549,9 +649,7 @@ final class GameScene: SKScene {
 
             if let hit = zombies.first(where: { $0.frame.contains(bullet.position) }) {
                 spent.append(bullet)
-                if hit.takeHit(bullet.damage) {
-                    kill(hit)
-                }
+                applyDamage(bullet.damage, to: hit)
             } else if bullet.position.y > size.height + 20
                         || bullet.position.x < -20 || bullet.position.x > size.width + 20 {
                 spent.append(bullet)
@@ -563,14 +661,146 @@ final class GameScene: SKScene {
         }
     }
 
+    /// All damage from bullets, rocks and bursts goes through here so perks apply everywhere.
+    private func applyDamage(_ amount: CGFloat, to zombie: Zombie, canPoison: Bool = true) {
+        guard zombie.parent != nil else { return }
+        var damage = amount
+        if perkActive(.instaKill) {
+            // Insta-kill doesn't apply to bosses: they take 30% more damage instead.
+            damage = zombie.kind == .boss ? amount * 1.3 : zombie.hp + 1
+        }
+        if canPoison && perkActive(.poison) {
+            zombie.poison(dps: amount * 0.5, duration: 3)
+        }
+        if zombie.takeHit(damage) {
+            kill(zombie)
+        }
+    }
+
     private func kill(_ zombie: Zombie) {
         guard zombie.parent != nil else { return } // already dead
         remove(zombie)
-        model?.zombieKilled(reward: zombie.kind.reward)
+        let reward = zombie.kind.reward * (perkActive(.doubleMoney) ? 2 : 1)
+        model?.zombieKilled(reward: reward)
         splat(at: zombie.position, size: zombie.size.width)
-        popLabel("+\(zombie.kind.reward)", at: zombie.position)
+        popLabel("+\(reward)", at: zombie.position)
         if zombie.kind == .bloater {
             burst(from: zombie)
+        }
+        maybeDropPerk(from: zombie)
+    }
+
+    // MARK: Perks
+
+    /// After wave 5, zombies have a small chance to drop a perk (bosses always do).
+    private func maybeDropPerk(from zombie: Zombie) {
+        guard wave > GameModel.perksAfterWave else { return }
+        guard zombie.kind == .boss || CGFloat.random(in: 0...1) < GameModel.perkDropChance else { return }
+        guard let perk = Perk.allCases.randomElement() else { return }
+
+        let token = SKShapeNode(circleOfRadius: 16)
+        token.fillColor = perk.color.withAlphaComponent(0.35)
+        token.strokeColor = perk.color
+        token.lineWidth = 3
+        token.position = zombie.position
+        token.zPosition = 45
+        token.name = "fx"
+        let icon = SKLabelNode(text: perk.emoji)
+        icon.fontSize = 18
+        icon.verticalAlignmentMode = .center
+        token.addChild(icon)
+        addChild(token)
+
+        // Pop out, then fly up to the HUD and switch on.
+        let fly = SKAction.move(to: CGPoint(x: size.width / 2, y: size.height - 24), duration: 0.6)
+        fly.timingMode = .easeIn
+        token.setScale(0.3)
+        token.run(.sequence([
+            .scale(to: 1.3, duration: 0.15), .scale(to: 1, duration: 0.1),
+            .wait(forDuration: 0.4), fly,
+            .run { [weak self] in self?.activate(perk) },
+            .removeFromParent(),
+        ]))
+    }
+
+    private func activate(_ perk: Perk) {
+        guard isRunning else { return }
+        perkTime[perk] = perk.duration
+        announce(perk.title + "!")
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        publishPerks()
+    }
+
+    private func tickPerks(_ dt: TimeInterval) {
+        guard !perkTime.isEmpty else { return }
+        for (perk, left) in perkTime {
+            perkTime[perk] = left - dt > 0 ? left - dt : nil
+        }
+        publishPerks()
+    }
+
+    /// Tell the HUD only when a whole second changes, to keep SwiftUI updates light.
+    private func publishPerks() {
+        let rounded = perkTime.mapValues { Int($0.rounded(.up)) }
+        if rounded != publishedPerks {
+            publishedPerks = rounded
+            model?.perksChanged(rounded)
+        }
+    }
+
+    // MARK: Catapult
+
+    /// Lob a rock in an arc to where the target will be, then splash everything nearby.
+    private func launchRock(from origin: CGPoint, at target: Zombie, damage: CGFloat, radius: CGFloat) {
+        let flight: TimeInterval = 0.7
+        let landing = CGPoint(x: target.position.x,
+                              y: max(barricadeY + 20, target.position.y - target.walkSpeed * CGFloat(flight)))
+        let rock = SKSpriteNode(color: UIColor(red: 0.55, green: 0.55, blue: 0.58, alpha: 1),
+                                size: CGSize(width: 9, height: 9))
+        rock.position = origin
+        rock.zPosition = 35
+        rock.name = "fx"
+        addChild(rock)
+
+        let move = SKAction.move(to: landing, duration: flight)
+        move.timingMode = .easeInEaseOut
+        // Grow then shrink to fake the height of the arc.
+        let arc = SKAction.sequence([.scale(to: 2.2, duration: flight / 2), .scale(to: 1, duration: flight / 2)])
+        rock.run(.sequence([
+            .group([move, arc, .rotate(byAngle: .pi * 3, duration: flight)]),
+            .run { [weak self] in self?.rockLanded(at: landing, damage: damage, radius: radius) },
+            .removeFromParent(),
+        ]))
+    }
+
+    private func rockLanded(at point: CGPoint, damage: CGFloat, radius: CGFloat) {
+        guard isRunning else { return }
+        let ring = SKShapeNode(circleOfRadius: radius)
+        ring.position = point
+        ring.strokeColor = UIColor(red: 0.85, green: 0.75, blue: 0.55, alpha: 0.9)
+        ring.fillColor = UIColor(red: 0.6, green: 0.5, blue: 0.35, alpha: 0.3)
+        ring.zPosition = 30
+        ring.setScale(0.3)
+        addChild(ring)
+        ring.run(.sequence([.group([.scale(to: 1, duration: 0.15), .fadeOut(withDuration: 0.3)]), .removeFromParent()]))
+        splat(at: point, size: 20)
+
+        let caught = zombies.filter { hypot($0.position.x - point.x, $0.position.y - point.y) < radius }
+        for victim in caught {
+            applyDamage(damage, to: victim, canPoison: false)
+        }
+    }
+
+    // MARK: Touch: tap a slot to unlock or build on it
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard isRunning, let point = touches.first?.location(in: self) else { return }
+        for (index, node) in slotNodes.enumerated() {
+            let center = CGPoint(x: node.position.x, y: node.position.y + 18)
+            if abs(point.x - center.x) < 26 && abs(point.y - center.y) < 26 {
+                model?.slotTapped(index)
+                return
+            }
         }
     }
 
@@ -590,8 +820,8 @@ final class GameScene: SKScene {
         let caught = zombies.filter {
             hypot($0.position.x - bloater.position.x, $0.position.y - bloater.position.y) < radius
         }
-        for victim in caught where victim.takeHit(damage) {
-            kill(victim)
+        for victim in caught {
+            applyDamage(damage, to: victim, canPoison: false)
         }
     }
 
@@ -654,12 +884,12 @@ final class GameScene: SKScene {
         ]))
     }
 
-    private func showBanner(_ text: String, size fontSize: CGFloat, hold: TimeInterval) {
+    private func showBanner(_ text: String, size fontSize: CGFloat, hold: TimeInterval, y: CGFloat = 0.6) {
         let label = SKLabelNode(text: text)
         label.fontName = "Menlo-Bold"
         label.fontSize = fontSize
         label.fontColor = .white
-        label.position = CGPoint(x: size.width / 2, y: size.height * 0.6)
+        label.position = CGPoint(x: size.width / 2, y: size.height * y)
         label.zPosition = 50
         label.alpha = 0
         addChild(label)

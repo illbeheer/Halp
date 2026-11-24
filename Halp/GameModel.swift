@@ -1,8 +1,10 @@
 import SwiftUI
 import SpriteKit
 
+// MARK: - Upgrades (bottom panel)
+
 enum Upgrade: CaseIterable, Identifiable {
-    case damage, fireRate, multiShot, turret, turretPower, repair
+    case damage, fireRate, multiShot, turretPower, catapultPower, repair
 
     var id: Self { self }
 
@@ -11,8 +13,8 @@ enum Upgrade: CaseIterable, Identifiable {
         case .damage: return "Damage"
         case .fireRate: return "Fire Rate"
         case .multiShot: return "Multi-Shot"
-        case .turret: return "Turret"
         case .turretPower: return "Turret Pwr"
+        case .catapultPower: return "Catapult Pwr"
         case .repair: return "Repair"
         }
     }
@@ -22,8 +24,8 @@ enum Upgrade: CaseIterable, Identifiable {
         case .damage: return "flame.fill"
         case .fireRate: return "bolt.fill"
         case .multiShot: return "arrow.triangle.branch"
-        case .turret: return "plus.square.on.square"
         case .turretPower: return "wrench.and.screwdriver.fill"
+        case .catapultPower: return "circle.hexagongrid.fill"
         case .repair: return "heart.fill"
         }
     }
@@ -33,19 +35,85 @@ enum Upgrade: CaseIterable, Identifiable {
         switch self {
         case .fireRate: return 15
         case .multiShot: return 2
-        case .turret: return GameModel.turretSlots
-        case .damage, .turretPower, .repair: return nil
+        case .damage, .turretPower, .catapultPower, .repair: return nil
         }
     }
 }
 
+// MARK: - Defense slots
+
+enum SlotState: Equatable {
+    case locked
+    case empty
+    case turret
+    case catapult
+}
+
+enum Defense {
+    case turret, catapult
+}
+
+// MARK: - Perks (random drops after wave 5)
+
+enum Perk: CaseIterable, Hashable {
+    case doubleMoney   // 2x kills earned
+    case instaKill     // normal zombies die in one hit; bosses take +30% damage instead
+    case poison        // every bullet also poisons (damage over time)
+
+    var duration: TimeInterval {
+        switch self {
+        case .doubleMoney: return 20
+        case .instaKill: return 8
+        case .poison: return 15
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .doubleMoney: return "DOUBLE MONEY"
+        case .instaKill: return "INSTA-KILL"
+        case .poison: return "POISON BULLETS"
+        }
+    }
+
+    var emoji: String {
+        switch self {
+        case .doubleMoney: return "💰"
+        case .instaKill: return "💀"
+        case .poison: return "🧪"
+        }
+    }
+
+    var color: UIColor {
+        switch self {
+        case .doubleMoney: return UIColor(red: 1.0, green: 0.80, blue: 0.20, alpha: 1)
+        case .instaKill: return UIColor(red: 0.95, green: 0.25, blue: 0.25, alpha: 1)
+        case .poison: return UIColor(red: 0.45, green: 0.90, blue: 0.30, alpha: 1)
+        }
+    }
+}
+
+// MARK: - Model
+
 /// Shared state between the SwiftUI interface (top bar, upgrades, menus) and the SpriteKit scene.
-/// Kills are the currency: every zombie killed adds to `kills`, which upgrades spend.
+/// Kills are the currency: every zombie killed adds to `kills`, which upgrades and slots spend.
 final class GameModel: ObservableObject {
     enum Phase { case menu, playing, gameOver }
 
-    static let turretSlots = 4
     let maxBaseHP = 20
+
+    // Slots
+    static let slotCount = 8
+    static let freeSlots = 2
+    /// A locked slot unlocks for free every this many waves (in order).
+    static let freeUnlockEvery = 4
+    /// Price to unlock slots 3...8 early.
+    private static let unlockCosts = [40, 80, 140, 220, 320, 450]
+
+    // Perks
+    /// Perks only start dropping after this wave.
+    static let perksAfterWave = 5
+    static let perkDropChance: CGFloat = 0.04
 
     @Published private(set) var phase: Phase = .menu
     @Published private(set) var wave = 0
@@ -53,9 +121,12 @@ final class GameModel: ObservableObject {
     @Published private(set) var totalKills = 0
     @Published private(set) var baseHP = 20
     @Published private(set) var levels: [Upgrade: Int] = [:]
+    @Published private(set) var slots: [SlotState] = GameModel.freshSlots()
+    @Published private(set) var activePerks: [Perk: Int] = [:]  // seconds left, for the HUD
     @Published private(set) var bestWave: Int
     @Published private(set) var isNewBest = false
     @Published private(set) var waveInProgress = false
+    @Published var selectedSlot: Int?
     @Published var isPaused = false
     @Published var isFastForward = false {
         didSet { scene.speed = isFastForward ? 2 : 1 }
@@ -73,6 +144,10 @@ final class GameModel: ObservableObject {
     let scene: GameScene
     private static let bestWaveKey = "halp.bestWave"
 
+    private static func freshSlots() -> [SlotState] {
+        (0..<slotCount).map { $0 < freeSlots ? .empty : .locked }
+    }
+
     init() {
         bestWave = UserDefaults.standard.integer(forKey: Self.bestWaveKey)
         scene = GameScene(size: CGSize(width: 390, height: 600))
@@ -88,6 +163,9 @@ final class GameModel: ObservableObject {
         totalKills = 0
         baseHP = maxBaseHP
         levels = [:]
+        slots = Self.freshSlots()
+        activePerks = [:]
+        selectedSlot = nil
         isNewBest = false
         isFastForward = false
         isPaused = false
@@ -115,6 +193,67 @@ final class GameModel: ObservableObject {
     var canPlay: Bool { phase == .playing && (isPaused || !waveInProgress) }
     var canPause: Bool { phase == .playing && waveInProgress && !isPaused }
 
+    // MARK: Slots
+
+    var unlockedCount: Int { slots.filter { $0 != .locked }.count }
+    var turretCount: Int { slots.filter { $0 == .turret }.count }
+    var catapultCount: Int { slots.filter { $0 == .catapult }.count }
+
+    /// Slots unlock in order, so only the first locked one can be bought.
+    var nextLockedSlot: Int? { slots.firstIndex(of: .locked) }
+
+    var unlockCost: Int? {
+        guard nextLockedSlot != nil else { return nil }
+        return Self.unlockCosts[min(unlockedCount - Self.freeSlots, Self.unlockCosts.count - 1)]
+    }
+
+    /// The wave after which the next slot unlocks for free.
+    var nextFreeUnlockWave: Int? {
+        guard nextLockedSlot != nil else { return nil }
+        return (wave / Self.freeUnlockEvery + 1) * Self.freeUnlockEvery
+    }
+
+    func buildCost(_ defense: Defense) -> Int {
+        switch defense {
+        case .turret: return Int(25 * pow(1.35, Double(turretCount)))
+        case .catapult: return Int(45 * pow(1.4, Double(catapultCount)))
+        }
+    }
+
+    /// Called when the player taps a slot on the battlefield.
+    func slotTapped(_ index: Int) {
+        guard phase == .playing, slots.indices.contains(index) else { return }
+        switch slots[index] {
+        case .locked, .empty: selectedSlot = index
+        case .turret, .catapult: break // upgraded from the panel
+        }
+    }
+
+    func unlockSlot(_ index: Int) {
+        guard index == nextLockedSlot, let cost = unlockCost, kills >= cost else { return }
+        kills -= cost
+        slots[index] = .empty
+        scene.syncSlots()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    func build(_ defense: Defense, at index: Int) {
+        guard slots.indices.contains(index), slots[index] == .empty else { return }
+        let cost = buildCost(defense)
+        guard kills >= cost else { return }
+        kills -= cost
+        slots[index] = defense == .turret ? .turret : .catapult
+        scene.syncSlots()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    private func unlockNextForFree() {
+        guard let index = nextLockedSlot else { return }
+        slots[index] = .empty
+        scene.syncSlots()
+        scene.announce("SLOT UNLOCKED!")
+    }
+
     // MARK: Upgrades
 
     func level(_ upgrade: Upgrade) -> Int { levels[upgrade, default: 0] }
@@ -125,8 +264,8 @@ final class GameModel: ObservableObject {
         case .damage: return Int(10 * pow(1.45, lvl))
         case .fireRate: return Int(12 * pow(1.5, lvl))
         case .multiShot: return [60, 220][min(level(upgrade), 1)]
-        case .turret: return [20, 50, 110, 220][min(level(upgrade), 3)]
         case .turretPower: return Int(25 * pow(1.55, lvl))
+        case .catapultPower: return Int(35 * pow(1.55, lvl))
         case .repair: return 10 + wave * 2
         }
     }
@@ -141,6 +280,7 @@ final class GameModel: ObservableObject {
         if isMaxed(upgrade) { return false }
         switch upgrade {
         case .turretPower: return turretCount > 0
+        case .catapultPower: return catapultCount > 0
         case .repair: return baseHP < maxBaseHP
         default: return true
         }
@@ -158,9 +298,6 @@ final class GameModel: ObservableObject {
         } else {
             levels[upgrade, default: 0] += 1
         }
-        if upgrade == .turret {
-            scene.syncTurrets()
-        }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
@@ -170,8 +307,8 @@ final class GameModel: ObservableObject {
         case .damage: return String(format: "%.1f dmg", Double(playerDamage))
         case .fireRate: return String(format: "%.1f/s", 1 / fireInterval)
         case .multiShot: return "\(shotsPerVolley) target\(shotsPerVolley == 1 ? "" : "s")"
-        case .turret: return "\(turretCount)/\(Self.turretSlots)"
-        case .turretPower: return "Lv \(level(.turretPower))"
+        case .turretPower: return turretCount == 0 ? "no turrets" : "Lv \(level(.turretPower))"
+        case .catapultPower: return catapultCount == 0 ? "no catapults" : "Lv \(level(.catapultPower))"
         case .repair: return "+5 HP"
         }
     }
@@ -181,9 +318,15 @@ final class GameModel: ObservableObject {
     var playerDamage: CGFloat { pow(1.3, CGFloat(level(.damage))) }
     var fireInterval: TimeInterval { 0.55 * pow(0.88, Double(level(.fireRate))) }
     var shotsPerVolley: Int { 1 + level(.multiShot) }
-    var turretCount: Int { level(.turret) }
+
+    /// Turrets: fast, single target.
     var turretDamage: CGFloat { 0.7 * pow(1.3, CGFloat(level(.turretPower))) }
     var turretInterval: TimeInterval { 0.9 * pow(0.9, Double(level(.turretPower))) }
+
+    /// Catapults: slow, splash damage.
+    var catapultDamage: CGFloat { 2.2 * pow(1.3, CGFloat(level(.catapultPower))) }
+    var catapultInterval: TimeInterval { 2.6 * pow(0.92, Double(level(.catapultPower))) }
+    var catapultRadius: CGFloat { 50 + CGFloat(min(level(.catapultPower), 10)) * 2 }
 
     // MARK: Events from the scene
 
@@ -195,11 +338,19 @@ final class GameModel: ObservableObject {
     func waveCleared() {
         waveInProgress = false
         UINotificationFeedbackGenerator().notificationOccurred(.success)
+        if wave % Self.freeUnlockEvery == 0 {
+            unlockNextForFree()
+        }
     }
 
     func zombieKilled(reward: Int) {
         kills += reward
         totalKills += 1
+    }
+
+    /// The scene reports perk timers (whole seconds) whenever they change.
+    func perksChanged(_ perks: [Perk: Int]) {
+        activePerks = perks
     }
 
     func baseHit(damage: Int) {
@@ -215,6 +366,7 @@ final class GameModel: ObservableObject {
             scene.endGame()
             waveInProgress = false
             isPaused = false
+            selectedSlot = nil
             phase = .gameOver
         }
     }
